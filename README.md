@@ -1,4 +1,4 @@
-# Laboratorio 3: Sistema de Búsqueda y Estudio de Escalabilidad Experimental
+# Laboratorio 3: Sistema de Búsqueda de estudiantes
 
 ## 1. Resumen y objetivos
 
