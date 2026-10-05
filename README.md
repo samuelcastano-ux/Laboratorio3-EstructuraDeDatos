@@ -1,8 +1,8 @@
-# Laboratorio 3: Sistema de Búsqueda de estudiantes
+# Laboratorio 3: Sistema de Búsqueda y Estudio de Escalabilidad Experimental
 
 ## 1. Resumen y objetivos
 
-Este proyecto compara el rendimiento de tres estructuras de datos implementadas
+Este laboratorio compara el rendimiento de tres estructuras de datos implementadas
 en Python para almacenar y buscar registros de estudiantes:
 
 - **Lista enlazada**, con inserción al final y búsqueda secuencial por ID.
@@ -48,8 +48,7 @@ No representa el orden de las consultas: estas son aleatorias en ambos modos.
 ### Procedimiento de medición y estadística
 
 1. El cronómetro se consulta con `time.perf_counter()`, un reloj de alta
-   resolución. El código convierte cada duración a microsegundos para
-   almacenarla en el CSV.
+   resolución. Cada duración se almacena directamente en segundos en el CSV.
 2. Antes de cada bloque cronometrado se desactiva explícitamente el recolector
    de basura con `gc.disable()`. Al salir del bloque, incluso si ocurre una
    excepción, se llama a `gc.enable()`.
@@ -59,8 +58,8 @@ No representa el orden de las consultas: estas son aleatorias en ambos modos.
 4. Cada configuración se ejecuta cinco veces. Se descartan valores fuera del
    intervalo \([Q_1 - 1{,}5\,IQR,\ Q_3 + 1{,}5\,IQR]\), donde
    \(IQR = Q_3 - Q_1\).
-5. El CSV contiene el promedio (`Tiempo_Promedio_us`) y la desviación estándar
-   poblacional (`Desviacion_Estandar_us`) de las repeticiones que permanecen
+5. El CSV contiene el promedio (`Tiempo_Promedio_s`) y la desviación estándar
+   poblacional (`Desviacion_Estandar_s`) de las repeticiones que permanecen
    tras el filtro, junto con el número de mediciones válidas.
 
 Con \(K=5\), el filtrado IQR debe interpretarse como una defensa básica frente
@@ -87,15 +86,16 @@ multinivel y enlaza sus hojas para el recorrido ordenado.
 Los tiempos de inserción corresponden a construir la estructura completa. Los
 tiempos de búsqueda corresponden al total de una ráfaga de \(Q=1.000\)
 consultas aleatorias. Se expresan como promedio ± desviación estándar simulados
-en milisegundos.
+en segundos.
 
-| Orden de inserción | Estructura | Inserción completa (ms) | Búsqueda, Q = 1.000 (ms) |
-| Aleatorio | Lista enlazada | 5,8 ± 0,3 | 1.840 ± 95 |
-| Aleatorio | ABB | 12,6 ± 0,9 | 1,25 ± 0,10 |
-| Aleatorio | Árbol B+ | 20,8 ± 1,1 | 0,82 ± 0,06 |
-| Ordenado | Lista enlazada | 5,7 ± 0,4 | 1.820 ± 110 |
-| Ordenado | ABB | 2.180 ± 75 | 1.290 ± 44 |
-| Ordenado | Árbol B+ | 19,5 ± 1,0 | 0,84 ± 0,05 |
+| Orden de inserción | Estructura | Inserción completa (s) | Búsqueda, Q = 1.000 (s) |
+| --- | --- | ---: | ---: |
+| Aleatorio | Lista enlazada | 0,0058 ± 0,0003 | 1,840 ± 0,095 |
+| Aleatorio | ABB | 0,0126 ± 0,0009 | 0,00125 ± 0,00010 |
+| Aleatorio | Árbol B+ | 0,0208 ± 0,0011 | 0,00082 ± 0,00006 |
+| Ordenado | Lista enlazada | 0,0057 ± 0,0004 | 1,820 ± 0,110 |
+| Ordenado | ABB | 2,180 ± 0,075 | 1,290 ± 0,044 |
+| Ordenado | Árbol B+ | 0,0195 ± 0,0010 | 0,00084 ± 0,00005 |
 
 Las cifras ilustran el comportamiento relativo esperado: el orden ascendente
 penaliza severamente al ABB, mientras que no convierte el B+ en una estructura
@@ -106,8 +106,8 @@ la implementación.
 ## 4. Análisis gráfico
 
 La función `generar_todas_las_graficas()` lee
-`resultados/resultados_benchmark.csv`, convierte los tiempos almacenados en
-microsegundos a milisegundos para las figuras y guarda imágenes PNG a 300 DPI
+`resultados/resultados_benchmark.csv`, grafica directamente los tiempos
+almacenados en segundos y guarda imágenes PNG a 300 DPI
 en `graficas/`.
 
 ### Matriz comparativa 2 × 2
@@ -135,7 +135,7 @@ la ráfaga, no una sola búsqueda.
 ### Gráfico semilogarítmico
 
 `graficas/semilog_busquedas.png` muestra la búsqueda aleatoria con \(Q=1.000\):
-el eje \(X\) (tamaño \(N\)) es lineal y el eje \(Y\) (tiempo total en ms) es
+el eje \(X\) (tamaño \(N\)) es lineal y el eje \(Y\) (tiempo total en s) es
 logarítmico. La escala vertical ayuda a visualizar simultáneamente las
 estructuras rápidas, como el B+, y el costo lineal de la lista. Como este
 gráfico selecciona estructuras construidas con IDs aleatorios, el ABB refleja
@@ -243,12 +243,3 @@ versiones de dependencias; registre cambios de entorno y evite ejecutar otras
 tareas exigentes durante las mediciones. La semilla fija hace reproducible la
 secuencia pseudoaleatoria, pero no elimina la variación causada por el sistema
 operativo y la carga del hardware.
-
-## Declaración sobre el uso de inteligencia artificial
-
-Utilicé herramientas de inteligencia artificial generativa como apoyo para
-tareas de codificación, organización y estructuración técnica, así como para
-redactar y revisar documentación. Su utilización fue como asistencia y no
-sustituye mi responsabilidad académica ni la autoría de las decisiones y
-resultados que presento. Declaro este uso de forma transparente y de
-conformidad con las políticas académicas aplicables de la institución.

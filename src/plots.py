@@ -17,7 +17,7 @@ _COLUMNAS_REQUERIDAS = {
     "Modo",
     "Estructura",
     "Q",
-    "Tiempo_Promedio_us",
+    "Tiempo_Promedio_s",
 }
 _ORDEN_ESTRUCTURAS = ("ListaEnlazada", "ABB", "ArbolBPlus")
 _PALETA_ESTRUCTURAS = {
@@ -30,6 +30,12 @@ _ETIQUETAS_ESTRUCTURAS = {
     "ABB": "Árbol binario de búsqueda (ABB)",
     "ArbolBPlus": "Árbol B+",
 }
+
+
+def _formatear_tiempo_segundos(tiempo: float) -> str:
+    return f"{tiempo:.3g} s"
+
+
 def _cargar_resultados(ruta_csv: Path) -> pd.DataFrame:
     if not ruta_csv.is_file():
         raise FileNotFoundError(
@@ -46,16 +52,15 @@ def _cargar_resultados(ruta_csv: Path) -> pd.DataFrame:
 
     datos = datos.copy()
     datos["N"] = pd.to_numeric(datos["N"], errors="raise")
-    datos["Tiempo_Promedio_us"] = pd.to_numeric(
-        datos["Tiempo_Promedio_us"],
+    datos["Tiempo_Promedio_s"] = pd.to_numeric(
+        datos["Tiempo_Promedio_s"],
         errors="raise",
     )
     datos["Q"] = pd.to_numeric(datos["Q"], errors="coerce")
-    datos["Tiempo_ms"] = datos["Tiempo_Promedio_us"] / 1000
 
     if (datos["N"] <= 0).any():
         raise ValueError("Los tamaños N del CSV deben ser mayores que cero.")
-    if (datos["Tiempo_ms"] <= 0).any():
+    if (datos["Tiempo_Promedio_s"] <= 0).any():
         raise ValueError("Los tiempos promedio deben ser mayores que cero.")
 
     return datos
@@ -88,10 +93,25 @@ def _dibujar_lineas(
     ax.legend(
         handles,
         [_ETIQUETAS_ESTRUCTURAS.get(etiqueta, etiqueta) for etiqueta in etiquetas],
-        title="Estructura",
+        title="Estructura (tiempo en s)",
         frameon=True,
     )
     ax.grid(True, which="both", linestyle="--", alpha=0.45)
+
+
+def _anotar_tiempos(ax: Axes, datos: pd.DataFrame) -> None:
+    for indice, estructura in enumerate(_ORDEN_ESTRUCTURAS):
+        puntos = datos.loc[datos["Estructura"] == estructura]
+        for _, punto in puntos.iterrows():
+            ax.annotate(
+                _formatear_tiempo_segundos(punto["Tiempo_Promedio_s"]),
+                xy=(punto["N"], punto["Tiempo_Promedio_s"]),
+                xytext=(0, 7 + indice * 6),
+                textcoords="offset points",
+                ha="center",
+                va="bottom",
+                fontsize=7,
+            )
 
 
 def _filtrar_experimento(
@@ -129,18 +149,20 @@ def _guardar_matriz_comparativa(datos: pd.DataFrame, carpeta: Path) -> None:
                     "El CSV no incluye resultados de búsqueda con Q = 1000 "
                     f"para el modo {modo!r}."
                 )
-        _dibujar_lineas(ax, seleccion, "N", "Tiempo_ms")
+        _dibujar_lineas(ax, seleccion, "N", "Tiempo_Promedio_s")
+        _anotar_tiempos(ax, seleccion)
         ax.set_title(titulo, fontsize=12, fontweight="bold")
         ax.set_xlabel("Cantidad de registros, N")
-        ax.set_ylabel("Tiempo promedio (ms)")
+        ax.set_ylabel("Tiempo de Ejecución (s)")
 
         if experimento == "Insercion" and modo == "Ordenado":
             abb = seleccion.loc[seleccion["Estructura"] == "ABB"].sort_values("N")
             if not abb.empty:
                 punto = abb.iloc[-1]
                 ax.annotate(
-                    "Degradación del ABB\ncon inserción ordenada",
-                    xy=(punto["N"], punto["Tiempo_ms"]),
+                    "Degradación del ABB\ncon inserción ordenada\n"
+                    f"{_formatear_tiempo_segundos(punto['Tiempo_Promedio_s'])}",
+                    xy=(punto["N"], punto["Tiempo_Promedio_s"]),
                     xytext=(-145, -45),
                     textcoords="offset points",
                     color=_PALETA_ESTRUCTURAS["ABB"],
@@ -174,7 +196,8 @@ def _guardar_semilog_busquedas(datos: pd.DataFrame, carpeta: Path) -> None:
 
     sns.set_theme(style="whitegrid")
     fig, ax = plt.subplots(figsize=(10, 6), constrained_layout=True)
-    _dibujar_lineas(ax, seleccion, "N", "Tiempo_ms")
+    _dibujar_lineas(ax, seleccion, "N", "Tiempo_Promedio_s")
+    _anotar_tiempos(ax, seleccion)
     ax.set_yscale("log")
     ax.set_title(
         "Búsqueda aleatoria: 1.000 consultas por ráfaga según el tamaño de entrada",
@@ -182,7 +205,7 @@ def _guardar_semilog_busquedas(datos: pd.DataFrame, carpeta: Path) -> None:
         fontweight="bold",
     )
     ax.set_xlabel("Cantidad de registros, N")
-    ax.set_ylabel("Tiempo promedio de 1.000 búsquedas (ms, escala logarítmica)")
+    ax.set_ylabel("Tiempo de Ejecución (s)")
     ax.grid(True, which="both", linestyle="--", alpha=0.45)
     fig.savefig(carpeta / "semilog_busquedas.png", dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -193,7 +216,8 @@ def _guardar_loglog_insercion(datos: pd.DataFrame, carpeta: Path) -> None:
 
     sns.set_theme(style="whitegrid")
     fig, ax = plt.subplots(figsize=(10, 6), constrained_layout=True)
-    _dibujar_lineas(ax, seleccion, "N", "Tiempo_ms")
+    _dibujar_lineas(ax, seleccion, "N", "Tiempo_Promedio_s")
+    _anotar_tiempos(ax, seleccion)
     ax.set_xscale("log", base=10)
     ax.set_yscale("log", base=10)
     ax.set_title(
@@ -202,7 +226,7 @@ def _guardar_loglog_insercion(datos: pd.DataFrame, carpeta: Path) -> None:
         fontweight="bold",
     )
     ax.set_xlabel("Cantidad de registros, N (escala log10)")
-    ax.set_ylabel("Tiempo promedio de inserción (ms, escala log10)")
+    ax.set_ylabel("Tiempo de Ejecución (s)")
 
     ax.text(
         0.03,

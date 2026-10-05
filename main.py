@@ -14,8 +14,8 @@ _COLUMNAS_RESUMEN = (
     "Modo",
     "Estructura",
     "Q",
-    "Tiempo promedio (ms)",
-    "Desviación estándar (ms)",
+    "Tiempo promedio (s)",
+    "Desviación estándar (s)",
 )
 
 
@@ -26,10 +26,8 @@ def _mostrar_resumen(resultados: pd.DataFrame) -> None:
             f"El benchmark no produjo resultados para N = {_TAMANO_RESUMEN:,}."
         )
 
-    resumen["Tiempo promedio (ms)"] = resumen["Tiempo_Promedio_us"] / 1000
-    resumen["Desviación estándar (ms)"] = (
-        resumen["Desviacion_Estandar_us"] / 1000
-    )
+    resumen["Tiempo promedio (s)"] = resumen["Tiempo_Promedio_s"]
+    resumen["Desviación estándar (s)"] = resumen["Desviacion_Estandar_s"]
     resumen["Q"] = resumen["Q"].apply(
         lambda cantidad: "-" if pd.isna(cantidad) else f"{int(cantidad):,}"
     )
@@ -38,8 +36,8 @@ def _mostrar_resumen(resultados: pd.DataFrame) -> None:
         resumen.loc[:, _COLUMNAS_RESUMEN].to_string(
             index=False,
             formatters={
-                "Tiempo promedio (ms)": "{:.3f}".format,
-                "Desviación estándar (ms)": "{:.3f}".format,
+                "Tiempo promedio (s)": "{:.6f}".format,
+                "Desviación estándar (s)": "{:.6f}".format,
             },
         )
     )

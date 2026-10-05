@@ -49,7 +49,7 @@ def _medir_bloque(operacion: Callable[[], None]) -> float:
         inicio = time.perf_counter()
         operacion()
         fin = time.perf_counter()
-    return (fin - inicio) * 1_000_000
+    return fin - inicio
 
 
 def filtrar_outliers_iqr(datos: Iterable[float]) -> list[float]:
@@ -82,16 +82,16 @@ def _crear_estructura(nombre: str) -> _Estructura:
     raise ValueError(f"Estructura no reconocida: {nombre!r}.")
 
 
-def _resumir_tiempos(tiempos_us: list[float]) -> dict[str, float | int]:
-    tiempos_filtrados = filtrar_outliers_iqr(tiempos_us)
+def _resumir_tiempos(tiempos_s: list[float]) -> dict[str, float | int]:
+    tiempos_filtrados = filtrar_outliers_iqr(tiempos_s)
     if not tiempos_filtrados:
         raise RuntimeError("El filtrado IQR descartó todas las mediciones.")
 
     desviacion = pstdev(tiempos_filtrados) if len(tiempos_filtrados) > 1 else 0.0
     return {
-        "Tiempo_Promedio_us": mean(tiempos_filtrados),
-        "Desviacion_Estandar_us": desviacion,
-        "Repeticiones": len(tiempos_us),
+        "Tiempo_Promedio_s": mean(tiempos_filtrados),
+        "Desviacion_Estandar_s": desviacion,
+        "Repeticiones": len(tiempos_s),
         "Repeticiones_Validas": len(tiempos_filtrados),
     }
 
@@ -112,7 +112,7 @@ def _medir_insercion(
     nombre_estructura: str,
     registros: list[Estudiante],
 ) -> tuple[list[float], _Estructura]:
-    tiempos_us: list[float] = []
+    tiempos_s: list[float] = []
     ultima_estructura: _Estructura | None = None
 
     for _ in range(ITERACIONES_K):
@@ -122,12 +122,12 @@ def _medir_insercion(
             for registro in registros:
                 estructura.insertar(registro)
 
-        tiempos_us.append(_medir_bloque(insertar_todos))
+        tiempos_s.append(_medir_bloque(insertar_todos))
         ultima_estructura = estructura
 
     if ultima_estructura is None:
         raise RuntimeError("No se realizaron repeticiones de inserción.")
-    return tiempos_us, ultima_estructura
+    return tiempos_s, ultima_estructura
 
 
 def _medir_busqueda(
@@ -136,7 +136,7 @@ def _medir_busqueda(
     cantidad_consultas: int,
     generador: random.Random,
 ) -> list[float]:
-    tiempos_us: list[float] = []
+    tiempos_s: list[float] = []
     for _ in range(ITERACIONES_K):
         consultas = [
             generador.choice(identificadores)
@@ -147,8 +147,8 @@ def _medir_busqueda(
             for identificador in consultas:
                 estructura.buscar(identificador)
 
-        tiempos_us.append(_medir_bloque(buscar_todos))
-    return tiempos_us
+        tiempos_s.append(_medir_bloque(buscar_todos))
+    return tiempos_s
 
 
 def ejecutar_benchmark_completo() -> pd.DataFrame:
