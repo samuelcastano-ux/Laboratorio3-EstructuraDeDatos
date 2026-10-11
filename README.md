@@ -1,245 +1,289 @@
-# Laboratorio 3: Sistema de Búsqueda y Estudio de Escalabilidad Experimental
+# Laboratorio 3: estructuras de datos y búsqueda de estudiantes
 
-## 1. Resumen y objetivos
+## Problema y objetivo
 
-Este laboratorio compara el rendimiento de tres estructuras de datos implementadas
-en Python para almacenar y buscar registros de estudiantes:
+El laboratorio compara cómo se comportan tres estructuras al guardar registros
+de estudiantes y buscar por ID. El problema es determinar cómo influyen el
+tamaño de los datos y el orden de inserción en los tiempos, la altura, el
+recorrido y el uso de memoria.
 
-- **Lista enlazada**, con inserción al final y búsqueda secuencial por ID.
-- **Árbol binario de búsqueda (ABB)**, sin balanceo automático.
-- **Árbol B+ de orden 16**, con nodos internos, hojas enlazadas y divisiones
-  durante la inserción.
+El objetivo es medir, bajo las mismas cargas, una lista enlazada, un árbol
+binario de búsqueda sin balanceo (ABB) y un árbol B+. Se consideran inserciones
+con IDs aleatorios y en orden ascendente, lotes de búsquedas existentes,
+búsquedas inexistentes, listado, altura, memoria y consultas por rango.
 
-El experimento mide el tiempo de construcción de cada estructura y el tiempo
-total de ráfagas de búsquedas. Se comparan entradas de distintos tamaños y dos
-órdenes de inserción: IDs permutados aleatoriamente y IDs ordenados de forma
-ascendente. Las búsquedas consultan IDs aleatorios existentes, con reemplazo.
+## Terminología y estructuras
 
-Los objetivos son:
+- **N**: cantidad de registros.
+- **M**: cantidad de búsquedas por lote. No es el orden del árbol.
+- **K**: cantidad de repeticiones independientes que indica el CSV para cada
+  configuración.
+- **Orden del B+**: el benchmark principal usa orden **16**. El barrido
+  adicional compara los órdenes **4, 16 y 64**.
+- **Modo**: orden de inserción de los IDs; no es el orden de las consultas.
 
-1. Observar cómo crecen los tiempos al aumentar el número de registros \(N\).
-2. Contrastar el efecto del orden de inserción, especialmente en el ABB
-   desbalanceado.
-3. Comparar el costo de búsqueda de una estructura lineal con el de árboles.
-4. Producir resultados reproducibles en CSV y representaciones gráficas que
-   permitan examinar las tendencias experimentales.
+| Estructura | Inserción individual | Construcción | Búsqueda | Recorrido ordenado |
+| --- | --- | --- | --- | --- |
+| Lista enlazada | \(O(1)\) al final | \(O(N)\) | \(O(N)\) | \(O(N\log N)\) con `listar()` |
+| ABB, caso equilibrado | \(O(\log N)\) | \(O(N\log N)\) | \(O(\log N)\) | \(O(N)\) |
+| ABB, IDs ordenados | hasta \(O(N)\) | \(O(N^2)\) | hasta \(O(N)\) | \(O(N)\) |
+| Árbol B+, orden fijo 16 | \(O(\log N)\) | \(O(N\log N)\) | \(O(\log N)\) | \(O(N)\) |
 
-## 2. Metodología experimental
+El ABB no se balancea automáticamente: con IDs ascendentes puede degenerar en
+una cadena. La complejidad equilibrada del ABB describe el caso promedio, no
+una garantía del código. El árbol B+ mantiene una estructura multinivel y
+enlaza sus hojas para recorrerlas en orden.
 
-### Parámetros
+## Hardware y software
 
-- Tamaños: \(N \in \{1.000,\ 2.500,\ 5.000,\ 7.500,\ 10.000\}\).
-- Consultas por ráfaga: \(Q \in \{10,\ 100,\ 1.000,\ 10.000\}\).
-- Repeticiones por configuración: \(K = 5\).
-- Orden del árbol B+: \(M = 16\).
-- Semilla del generador pseudoaleatorio: 2026.
-- Escenarios de construcción: IDs aleatorios (permutación uniforme de
-  \(1\) a \(N\)) e IDs ordenados de \(1\) a \(N\).
+Datos leídos de [`resultados/ficha.json`](resultados/ficha.json):
 
-Los registros de estudiantes se preparan antes de iniciar el cronómetro. Para
-cada estructura y escenario, el benchmark construye una instancia nueva en
-cada repetición. En búsqueda se mide el tiempo conjunto para completar \(Q\)
-consultas; los IDs consultados se eligen aleatoriamente entre los registros
-existentes y pueden repetirse.
+| Propiedad | Valor registrado |
+| --- | --- |
+| CPU | Intel64 Family 6 Model 186 Stepping 2, GenuineIntel |
+| Núcleos lógicos | 12 |
+| Memoria física | 16,869,351,424 bytes |
+| Sistema operativo | Windows-10-10.0.26200-SP0 |
+| Python | CPython 3.11.9, 64-bit |
+| NumPy | 2.4.6 |
+| pandas | 3.0.6 |
+| Matplotlib | 3.11.2 |
+| Seaborn | 0.13.2 |
+| Semilla | 2026 |
 
-La columna `Modo` identifica **el orden con que se construyó la estructura**.
-No representa el orden de las consultas: estas son aleatorias en ambos modos.
+## Parámetros y límites de viabilidad
 
-### Procedimiento de medición y estadística
+El conjunto de tamaños configurado es
+\(N \in \{1.000,\ 2.500,\ 5.000,\ 7.500,\ 10.000,\ 50.000,\ 100.000,\
+500.000,\ 1.000.000\}\). Los lotes de búsqueda son
+\(M \in \{10,\ 100,\ 1.000,\ 10.000\}\). Estos tamaños y lotes aparecen en los
+CSV de resultados.
 
-1. El cronómetro se consulta con `time.perf_counter()`, un reloj de alta
-   resolución. Cada duración se almacena directamente en segundos en el CSV.
-2. Antes de cada bloque cronometrado se desactiva explícitamente el recolector
-   de basura con `gc.disable()`. Al salir del bloque, incluso si ocurre una
-   excepción, se llama a `gc.enable()`.
-3. La generación de registros y de consultas, así como la creación de cada
-   estructura, ocurre fuera del intervalo cronometrado. Se mide la inserción
-   completa o la ráfaga completa de búsquedas.
-4. Cada configuración se ejecuta cinco veces. Se descartan valores fuera del
-   intervalo \([Q_1 - 1{,}5\,IQR,\ Q_3 + 1{,}5\,IQR]\), donde
-   \(IQR = Q_3 - Q_1\).
-5. El CSV contiene el promedio (`Tiempo_Promedio_s`) y la desviación estándar
-   poblacional (`Desviacion_Estandar_s`) de las repeticiones que permanecen
-   tras el filtro, junto con el número de mediciones válidas.
+El CSV registra \(K=10\) hasta \(N=10.000\), \(K=5\) para los tamaños
+intermedios y \(K=3\) para los tamaños mayores. Para el ABB ordenado en el
+límite \(N=100.000\), registra \(K=3\). Se reduce el número de repeticiones en
+las configuraciones costosas para contener el tiempo de ejecución; el ABB
+ordenado puede requerir \(O(N^2)\) operaciones.
 
-Con \(K=5\), el filtrado IQR debe interpretarse como una defensa básica frente
-a valores extremos, no como garantía de una estimación estadística precisa.
-Además, el recolector se rehabilita después de cada bloque; por ello puede
-actuar entre mediciones, aunque no durante el intervalo cronometrado.
+Límites del benchmark:
 
-### Complejidades esperadas
+- ABB con IDs ordenados: viable solo hasta \(N=100.000\). Aun dentro de ese
+  límite, una configuración puede superar el timeout y quedar como **no
+  medido**, como ocurrió en los resultados de ese tamaño.
+- Lista enlazada con \(N \ge 500.000\): búsquedas existentes limitadas a
+  \(M \le 1.000\). Para los tamaños grandes, las pruebas de memoria se reservan
+  al árbol B+ y al ABB con IDs aleatorios.
+- Una configuración que supera el timeout de 600 segundos se aborta y aparece
+  como **no medido**. Los límites o el timeout no se reemplazan con valores
+  estimados.
 
-| Estructura | Inserción individual | Construcción de \(N\) registros | Búsqueda |
-| Lista enlazada | \(O(1)\) al final | \(O(N)\) | \(O(N)\) |
-| ABB balanceado / caso promedio | \(O(\log N)\) | \(O(N\log N)\) | \(O(\log N)\) |
-| ABB degenerado por IDs ordenados | hasta \(O(N)\) | \(O(N^2)\) | hasta \(O(N)\) |
-| Árbol B+ de orden fijo \(M=16\) | \(O(\log_M N)\) | \(O(N\log_M N)\) | \(O(\log_M N)\) |
+## Generación de datos y búsquedas
 
-El ABB no realiza balanceo automático. Con inserciones ascendentes se convierte
-en una cadena; por tanto, su búsqueda e inserción pueden degradarse a tiempo
-lineal por operación. La lista mantiene inserción al final constante, pero cada
-búsqueda recorre secuencialmente los nodos. El B+ conserva un índice
-multinivel y enlaza sus hojas para el recorrido ordenado.
+Para cada tamaño se generan IDs en orden ascendente o en una permutación
+aleatoria. Los registros comparten los mismos campos y las búsquedas existentes
+usan IDs aleatorios del conjunto generado. Las consultas se ejecutan en lotes
+de tamaño M. Las búsquedas inexistentes usan IDs fuera del intervalo de IDs
+almacenados.
 
-## 3. Tabla de resultados representativos para \(N=10.000\)
+La construcción y validación preceden al cronómetro de las operaciones de
+búsqueda, listado, altura y rango. Se comprueba que `listar()` devuelve los IDs
+en orden y que las consultas de validación encuentran los registros esperados.
+La memoria se mide aparte durante una construcción; no se repite por cada K.
 
-Los tiempos de inserción corresponden a construir la estructura completa. Los
-tiempos de búsqueda corresponden al total de una ráfaga de \(Q=1.000\)
-consultas aleatorias. Se expresan como promedio ± desviación estándar simulados
-en segundos.
+## Método de medición, estadística y atípicos
 
-| Orden de inserción | Estructura | Inserción completa (s) | Búsqueda, Q = 1.000 (s) |
-| --- | --- | ---: | ---: |
-| Aleatorio | Lista enlazada | 0,0058 ± 0,0003 | 1,840 ± 0,095 |
-| Aleatorio | ABB | 0,0126 ± 0,0009 | 0,00125 ± 0,00010 |
-| Aleatorio | Árbol B+ | 0,0208 ± 0,0011 | 0,00082 ± 0,00006 |
-| Ordenado | Lista enlazada | 0,0057 ± 0,0004 | 1,820 ± 0,110 |
-| Ordenado | ABB | 2,180 ± 0,075 | 1,290 ± 0,044 |
-| Ordenado | Árbol B+ | 0,0195 ± 0,0010 | 0,00084 ± 0,00005 |
+- Se usa `time.perf_counter()` y se desactiva temporalmente el recolector de
+  basura durante la ventana cronometrada.
+- Las operaciones rápidas se repiten dentro de una ventana para obtener su
+  tiempo medio. Los CSV crudos registran la muestra, la duración de la ventana
+  y el número de repeticiones internas.
+- La memoria es el pico de asignaciones Python observado con `tracemalloc` y se
+  expresa en bytes. No equivale al uso total de memoria del proceso.
+- El resumen calcula media, desviación estándar muestral e intervalo de
+  confianza del 95%. Detecta atípicos con la regla IQR, pero no los elimina de
+  la media principal; también guarda la media sin atípicos.
+- **No medido** significa que no existe una medición válida para esa
+  configuración. No se interpreta como cero ni como una estimación.
 
-Las cifras ilustran el comportamiento relativo esperado: el orden ascendente
-penaliza severamente al ABB, mientras que no convierte el B+ en una estructura
-lineal. La lista conserva una búsqueda costosa en ambos escenarios. Las
-constantes exactas dependen del hardware, el intérprete, la carga del equipo y
-la implementación.
+## Resultados reales
 
-## 4. Análisis gráfico
+Las siguientes cifras son medias y desviaciones muestrales del archivo
+[`resultados/resultados_benchmark.csv`](resultados/resultados_benchmark.csv).
+Los tiempos están en segundos; las búsquedas mostradas son lotes completos.
+La altura es el promedio registrado y la memoria está en bytes. «no medido»
+indica que el CSV no contiene una medición válida.
 
-La función `generar_todas_las_graficas()` lee
-`resultados/resultados_benchmark.csv`, grafica directamente los tiempos
-almacenados en segundos y guarda imágenes PNG a 300 DPI
-en `graficas/`.
+### N = 10.000
 
-### Matriz comparativa 2 × 2
+| Modo | Estructura | K | Inserción (s) | Búsqueda M=1.000 (s) | Búsqueda M=10.000 (s) | Listar (s) | Altura | Memoria (bytes) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| IDs aleatorios | Lista enlazada | 10 | 0.005733 ± 0.000448 | 1.06894 ± 0.063997 | 10.8744 ± 0.261 | 0.004667 ± 0.000261 | 1 | 880,208 |
+| IDs aleatorios | ABB | 10 | 0.02004 ± 0.00155 | 0.001447 ± 0.00011 | 0.01588 ± 0.000994 | 0.002015 ± 0.000143 | 31.1 | 1,040,200 |
+| IDs aleatorios | Árbol B+ | 10 | 0.02693 ± 0.00089 | 0.001005 ± 0.0000662 | 0.01032 ± 0.000786 | 0.0001805 ± 0.0000168 | 4 | 522,992 |
+| IDs ordenados | Lista enlazada | 10 | 0.005925 ± 0.000632 | 1.06717 ± 0.084792 | 10.5394 ± 0.368575 | 0.002407 ± 0.000144 | 1 | 880,208 |
+| IDs ordenados | ABB | 10 | 3.46737 ± 0.174444 | 0.292991 ± 0.036483 | 2.969755 ± 0.204643 | 0.004404 ± 0.000471 | 10.000 | 1,040,416 |
+| IDs ordenados | Árbol B+ | 10 | 0.02304 ± 0.00119 | 0.001089 ± 0.000099 | 0.01184 ± 0.00105 | 0.0001884 ± 0.0000201 | 5 | 637,448 |
 
-El archivo `graficas/matriz_comparativa.png` presenta:
+### N = 100.000
 
-1. **Inserción aleatoria frente a \(N\):** permite comparar el costo de
-   construir las estructuras cuando el ABB recibe una permutación aleatoria.
-   Su altura suele ser mucho menor que en el peor caso, aunque no tiene
-   garantía de balance.
-2. **Inserción ordenada frente a \(N\):** el crecimiento pronunciado del ABB
-   muestra su degradación al formar una cadena. La anotación destaca esta
-   tendencia; lista y B+ permiten contrastar sus costos de construcción.
-3. **Búsqueda aleatoria frente a \(N\):** compara ráfagas de \(Q=1.000\)
-   búsquedas sobre estructuras construidas con IDs aleatorios.
-4. **Búsqueda ordenada frente a \(N\):** utiliza consultas aleatorias sobre
-   estructuras construidas con IDs ordenados. La búsqueda del ABB es lenta
-   porque conserva la forma degenerada creada durante la inserción.
+| Modo | Estructura | K | Inserción (s) | Búsqueda M=1.000 (s) | Búsqueda M=10.000 (s) | Listar (s) | Altura | Memoria (bytes) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| IDs aleatorios | Lista enlazada | 5 | no medido | no medido | no medido | no medido | no medido | no medido |
+| IDs aleatorios | ABB | 5 | 0.379591 ± 0.0147 | 0.00279026 ± 0.000171 | 0.0349771 ± 0.00195 | 0.0509152 ± 0.00268 | 40.6 | 10,400,400 |
+| IDs aleatorios | Árbol B+ | 5 | 0.585853 ± 0.208 | 0.00260478 ± 0.00103 | 0.0299919 ± 0.00922 | 0.00779753 ± 0.00172 | 5 | 5,253,432 |
+| IDs ordenados | Lista enlazada | 5 | no medido | no medido | no medido | no medido | no medido | no medido |
+| IDs ordenados | ABB | 3 | no medido | no medido | no medido | no medido | no medido | no medido |
+| IDs ordenados | Árbol B+ | 5 | 0.275896 ± 0.027 | 0.00172731 ± 0.000241 | 0.0200016 ± 0.00155 | 0.00316382 ± 0.000405 | 6 | 6,412,016 |
 
-Las gráficas de búsqueda de la matriz fijan \(Q=1.000\) para mantener
-comparable el volumen de consultas entre tamaños. Un crecimiento visual debe
-interpretarse teniendo en cuenta que cada punto representa el tiempo total de
-la ráfaga, no una sola búsqueda.
+### N = 1.000.000
 
-### Gráfico semilogarítmico
+| Modo | Estructura | K | Inserción (s) | Búsqueda M=1.000 (s) | Búsqueda M=10.000 (s) | Listar (s) | Altura | Memoria (bytes) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| IDs aleatorios | Lista enlazada | 3 | no medido | no medido | no medido | no medido | no medido | no medido |
+| IDs aleatorios | ABB | 3 | 9.37374 ± 0.106 | 0.00861353 ± 0.000311 | 0.0840923 ± 0.00291 | 1.03436 ± 0.183 | 49.333 | 104,000,416 |
+| IDs aleatorios | Árbol B+ | 3 | 8.70833 ± 0.128 | 0.00545478 ± 0.000162 | 0.0540715 ± 0.00118 | 0.130942 ± 0.0135 | 6 | 52,605,656 |
+| IDs ordenados | Lista enlazada | 3 | no medido | no medido | no medido | no medido | no medido | no medido |
+| IDs ordenados | ABB | 3 | no medido | no medido | no medido | no medido | no medido | no medido |
+| IDs ordenados | Árbol B+ | 3 | 8.75048 ± 0.0416 | 0.00679678 ± 0.0000238 | 0.0686844 ± 0.00145 | 0.0707955 ± 0.00325 | 7 | 64,159,184 |
 
-`graficas/semilog_busquedas.png` muestra la búsqueda aleatoria con \(Q=1.000\):
-el eje \(X\) (tamaño \(N\)) es lineal y el eje \(Y\) (tiempo total en s) es
-logarítmico. La escala vertical ayuda a visualizar simultáneamente las
-estructuras rápidas, como el B+, y el costo lineal de la lista. Como este
-gráfico selecciona estructuras construidas con IDs aleatorios, el ABB refleja
-ese escenario y no el caso degenerado por inserción ordenada. Una separación
-vertical entre curvas representa una diferencia multiplicativa de tiempos.
+Los registros de orden B+ distintos al orden 16 pertenecen al barrido
+adicional. Los resultados adicionales, incluidos búsquedas inexistentes,
+rangos y desviaciones, están en el CSV de resumen; cada medición individual
+está en [`resultados/resultados_crudos.csv`](resultados/resultados_crudos.csv).
+El listado de resultados por tamaño se encuentra en
+[`resultados/tabla_N.md`](resultados/tabla_N.md).
 
-### Gráfico log-log de inserción ordenada
+## Tablas y gráficas
 
-`graficas/loglog_insercion.png` representa la inserción completa de IDs
-ordenados con ambos ejes en escala logarítmica base 10. En una relación
-aproximada \(T(N)=cN^m\), la pendiente de la curva en coordenadas log-log es
-\(m\). La referencia teórica indicada en el gráfico es:
+### Matriz comparativa
 
-- **ABB degenerado:** \(T(N)=O(N^2)\), por lo que se espera una pendiente
-  aproximada \(m \approx 2\).
-- **Lista enlazada:** \(N\) inserciones al final cuestan \(O(N)\) en conjunto;
-  se espera \(m \approx 1\).
-- **Árbol B+:** con orden fijo, la construcción es \(O(N\log_M N)\). En el
-  rango experimental puede parecer cercana a lineal, pero no es estrictamente
-  \(O(N)\); la anotación \(m \approx 1\) es una referencia visual de corto
-  rango, no una cota asintótica exacta.
+![Matriz comparativa de inserción y búsqueda](graficas/matriz_comparativa.png)
 
-La pendiente observada en cinco tamaños finitos no prueba por sí sola una
-complejidad. Debe interpretarse junto con el algoritmo, la variabilidad entre
-corridas y los valores reales del CSV.
+### Búsquedas por lote
 
-## 5. Respuestas a preguntas clave
+![Búsquedas por lote en escala semilogarítmica](graficas/semilog_busquedas.png)
 
-### ¿Cuándo el ABB deja de comportarse como \(O(\log N)\)?
+![Tiempo de búsqueda frente al tamaño del lote](graficas/busqueda_vs_m.png)
 
-El ABB implementado no se autoequilibra. Puede presentar búsqueda promedio
-cercana a \(O(\log N)\) si sus inserciones producen una forma razonablemente
-equilibrada; esto es una expectativa del caso promedio, no una garantía. Si se
-insertan IDs ya ordenados, cada nuevo nodo queda sucesivamente a la derecha
-del anterior. La altura puede llegar a \(h=N-1\), y tanto la inserción como la
-búsqueda pasan a tener costo \(O(N)\). Construir el árbol completo en ese orden
-requiere \(O(N^2)\).
+### Inserción y extrapolación
 
-### ¿Qué relación hay entre la altura \(h\) y el tiempo de búsqueda?
+![Inserción en escala log-log](graficas/loglog_insercion.png)
 
-En el ABB, una búsqueda sigue como máximo un camino desde la raíz hasta un
-nodo o una hoja ausente. Su costo es \(O(h)\): un árbol equilibrado tiene
-\(h=O(\log N)\), mientras que uno degenerado puede tener \(h=O(N)\). En la
-lista enlazada, la búsqueda puede recorrer hasta \(N\) nodos. En el B+, la
-altura es aproximadamente logarítmica en base al orden del árbol, y la
-búsqueda desciende por nodos internos hasta una hoja.
+![Extrapolación de inserción](graficas/loglog_extrapolacion.png)
 
-### ¿Cuál es el impacto del costo constante inicial en entradas pequeñas?
+El gráfico de extrapolación distingue sus proyecciones de los puntos medidos.
+Una proyección no es un resultado de ejecución: su valor es **no medido** en
+los CSV. La tabla anterior reporta para el tamaño mayor solamente las
+configuraciones que sí están registradas como medidas.
 
-Para \(N\) pequeño, costos constantes como crear nodos, preparar el entorno,
-invocar funciones y acceder a atributos pueden representar una parte
-importante del tiempo medido. Por ello una estructura con mejor crecimiento
-asintótico no necesariamente gana en todos los tamaños pequeños. Al crecer
-\(N\), la forma del árbol y el número de operaciones tienden a dominar. El
-benchmark excluye la generación de registros y la creación de la estructura
-del intervalo cronometrado, pero el costo de inserción de nodos sí forma parte
-de la medición.
+### Altura, listado, memoria y orden B+
 
-## 6. Reproducción en Visual Studio Code
+![Altura y relación con búsqueda](graficas/altura.png)
 
-1. Abra en VS Code la carpeta raíz del repositorio, la que contiene
-   `main.py`, `requirements.txt` y `src/`.
-2. Abra una terminal integrada en esa carpeta y cree un entorno virtual:
+![Tiempo de listar](graficas/listar_vs_n.png)
 
-   ```powershell
-   py -3.11 -m venv .venv
-   ```
+![Memoria pico](graficas/memoria_vs_n.png)
 
-3. Active el entorno en PowerShell:
+![Comparación de órdenes del árbol B+](graficas/orden_bplus.png)
 
-   ```powershell
-   .\.venv\Scripts\Activate.ps1
-   ```
+## Respuestas a siete preguntas de análisis
 
-   Si la política local de ejecución no permite activar scripts, use el
-   ejecutable del entorno directamente en los siguientes comandos.
-4. Instale las dependencias declaradas:
+### ¿Cómo afecta el orden de inserción al ABB?
 
-   ```powershell
-   python -m pip install --upgrade pip
-   python -m pip install -r requirements.txt
-   ```
+En el resultado de tamaño 10.000, la altura promedio del ABB pasa de 31.1 con
+IDs aleatorios a 10.000 con IDs ordenados. Su tiempo de inserción registrado
+pasa de 0.02004 s a 3.46737 s. Los datos muestran la degeneración de este ABB
+sin balanceo.
 
-5. En VS Code, seleccione como intérprete de Python el ejecutable
-   `.venv\Scripts\python.exe`.
-6. Cierre cargas intensivas y ejecute desde la raíz del proyecto:
+### ¿Cuándo deja el ABB de comportarse como \(O(\log N)\)?
 
-   ```powershell
-   python main.py
-   ```
+La búsqueda deja de tener altura logarítmica cuando el árbol se degenera y
+requiere recorrer un camino proporcional a N. En el resultado de tamaño 10.000,
+la búsqueda del ABB ordenado tiene altura 10.000; el de IDs aleatorios tiene
+altura 31.1. Para el ABB ordenado de tamaño 100.000, los tiempos son **no
+medido**.
 
-7. Espere a que terminen todas las configuraciones. El ABB con inserción
-   ordenada realiza trabajo cuadrático y puede tomar bastante más tiempo que
-   los otros casos. No interrumpa la ejecución si necesita que se guarden todos
-   los resultados.
-8. Revise la tabla resumen que imprime la consola para \(N=10.000\), el CSV
-   `resultados/resultados_benchmark.csv` y las imágenes:
+### ¿Qué relación hay entre altura y tiempo de búsqueda?
 
-   - `graficas/matriz_comparativa.png`
-   - `graficas/semilog_busquedas.png`
-   - `graficas/loglog_insercion.png`
+El costo de una búsqueda en el ABB depende de los nodos del camino y, por ello,
+de su altura. En el resultado de tamaño 10.000, para lotes de 1.000 búsquedas,
+el ABB aleatorio registra 0.001447 s y el ABB ordenado 0.292991 s, junto con
+alturas de 31.1 y 10.000, respectivamente. Son medidas de esas configuraciones,
+no una relación causal aislada de otros factores.
 
-Para que dos corridas sean comparables, conserve el mismo equipo, intérprete y
-versiones de dependencias; registre cambios de entorno y evite ejecutar otras
-tareas exigentes durante las mediciones. La semilla fija hace reproducible la
-secuencia pseudoaleatoria, pero no elimina la variación causada por el sistema
-operativo y la carga del hardware.
+### ¿Cómo cambia el tiempo al aumentar M?
+
+Para la lista enlazada con IDs aleatorios y tamaño 10.000, el lote M=1.000 tarda
+1.06894 s y el lote M=10.000 tarda 10.8744 s. Para el árbol B+ bajo el mismo
+tamaño y modo, esos lotes tardan 0.001005 s y 0.01032 s. Los CSV permiten
+contrastar el costo de ampliar el lote entre estructuras.
+
+### ¿Qué estructura registra menor tiempo para búsquedas por lote?
+
+En las configuraciones medidas de tamaño 1.000.000 y con IDs aleatorios, el
+árbol B+ registra 0.005455 s para M=1.000 y 0.0540715 s para M=10.000; el ABB
+registra 0.008614 s y 0.0840923 s, respectivamente. Para la lista enlazada
+estos casos son **no medido**.
+
+### ¿Qué se observa al listar y consultar rangos?
+
+En tamaño 1.000.000 con IDs aleatorios, `listar()` registra 0.130942 s para el
+árbol B+ y 1.03436 s para el ABB. La consulta por rango registra 0.125 s y
+1.284 s, respectivamente. En esas mismas configuraciones, la lista enlazada
+es **no medido**.
+
+### ¿Qué resultados de memoria y escalabilidad están disponibles?
+
+En tamaño 1.000.000 con IDs aleatorios, el CSV registra 52,605,700 bytes para
+el árbol B+ y 104,000,000 bytes para el ABB. La lista enlazada no se midió en
+ese tamaño. El ABB con IDs ordenados tampoco se midió: el CSV lo limita por
+viabilidad en ese tamaño. Los valores no medidos no se extrapolan ni se
+presentan como mediciones.
+
+## Limitaciones
+
+- Los resultados dependen del equipo, el intérprete y la carga del sistema
+  registrados en `ficha.json`.
+- Las configuraciones abortadas por timeout o excluidas por viabilidad no
+  ofrecen una base para comparar tiempos, alturas o memoria; se muestran como
+  **no medido**.
+- La memoria de `tracemalloc` corresponde a asignaciones trazadas por Python,
+  no a toda la memoria residente del proceso.
+- Las proyecciones de la figura de extrapolación son estimaciones gráficas y no
+  forman parte de los valores medidos de los CSV.
+- El enunciado original con las siete preguntas no está guardado en los
+  archivos de resultados; las respuestas de esta sección se limitan a
+  conclusiones respaldadas por el CSV.
+
+## Cómo reproducir
+
+Desde la raíz del repositorio, configure el entorno e instale las dependencias:
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+```
+
+Ejecute el benchmark reducido o completo:
+
+```powershell
+python main.py --rapido
+python main.py
+```
+
+Para continuar una corrida usando los tamaños ya guardados en el CSV crudo:
+
+```powershell
+python main.py --reanudar
+```
+
+Para regenerar las figuras desde los resultados existentes sin volver a medir:
+
+```powershell
+python main.py --solo-graficas
+```
+
+Los CSV parciales se escriben al terminar cada N. Revise
+`resultados/resultados_crudos.csv`, `resultados/resultados_benchmark.csv`,
+`resultados/tabla_N.md`, `resultados/ficha.json` y los PNG de `graficas/`.

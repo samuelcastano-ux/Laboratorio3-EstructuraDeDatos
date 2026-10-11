@@ -1,12 +1,8 @@
 from __future__ import annotations
 
 import bisect
-import sys
 from collections.abc import Iterator, Mapping
 from typing import TypeAlias
-
-
-sys.setrecursionlimit(50000)
 
 
 class Estudiante:
@@ -88,10 +84,13 @@ class ListaEnlazada:
         return None
 
     def listar(self) -> list[Registro]:
-        return list(self)
+        return sorted(self, key=_obtener_id)
 
     def listar_ordenado(self) -> list[Registro]:
-        return sorted(self, key=_obtener_id)
+        return self.listar()
+
+    def altura(self) -> int:
+        return 1
 
     def __iter__(self) -> Iterator[Registro]:
         actual = self.cabeza
@@ -132,26 +131,13 @@ class ABB:
                     actual.izq = nodo
                     break
                 actual = actual.izq
+            elif identificador == actual.id:
+                raise ValueError(f"Ya existe un registro con ID {identificador}.")
             else:
                 if actual.der is None:
                     actual.der = nodo
                     break
                 actual = actual.der
-        self._longitud += 1
-
-    def insertar_recursivo(self, registro: Registro) -> None:
-        identificador = _obtener_id(registro)
-
-        def insertar_en(nodo: _NodoABB | None) -> _NodoABB:
-            if nodo is None:
-                return _NodoABB(registro, identificador)
-            if identificador < nodo.id:
-                nodo.izq = insertar_en(nodo.izq)
-            else:
-                nodo.der = insertar_en(nodo.der)
-            return nodo
-
-        self.raiz = insertar_en(self.raiz)
         self._longitud += 1
 
     def buscar(self, target_id: int) -> Registro | None:
@@ -179,6 +165,21 @@ class ABB:
             actual = actual.der
         return registros
 
+    def altura(self) -> int:
+        if self.raiz is None:
+            return 0
+
+        altura = 0
+        pendientes: list[tuple[_NodoABB, int]] = [(self.raiz, 1)]
+        while pendientes:
+            nodo, nivel = pendientes.pop()
+            altura = max(altura, nivel)
+            if nodo.izq is not None:
+                pendientes.append((nodo.izq, nivel + 1))
+            if nodo.der is not None:
+                pendientes.append((nodo.der, nivel + 1))
+        return altura
+
     def __len__(self) -> int:
         return self._longitud
 
@@ -193,10 +194,10 @@ class _NodoBPlus:
 
 
 class ArbolBPlus:
-    def __init__(self, M: int = 16) -> None:
-        if not isinstance(M, int) or isinstance(M, bool) or M < 3:
-            raise ValueError("El orden M del árbol B+ debe ser un entero mayor o igual a 3.")
-        self.M = M
+    def __init__(self, orden: int = 16) -> None:
+        if not isinstance(orden, int) or isinstance(orden, bool) or orden < 3:
+            raise ValueError("El orden del árbol B+ debe ser un entero mayor o igual a 3.")
+        self.orden = orden
         self.raiz = _NodoBPlus(hoja=True)
         self._longitud = 0
 
@@ -216,7 +217,9 @@ class ArbolBPlus:
 
     def insertar(self, registro: Registro) -> None:
         identificador = _obtener_id(registro)
-        max_claves = self.M - 1
+        if self.buscar(identificador) is not None:
+            raise ValueError(f"Ya existe un registro con ID {identificador}.")
+        max_claves = self.orden - 1
 
         if len(self.raiz.claves) == max_claves:
             nueva_raiz = _NodoBPlus(hoja=False)
@@ -256,19 +259,18 @@ class ArbolBPlus:
         identificador: int,
         registro: Registro,
     ) -> None:
-        if nodo.hoja:
+        while not nodo.hoja:
             indice = bisect.bisect_right(nodo.claves, identificador)
-            nodo.claves.insert(indice, identificador)
-            nodo.valores.insert(indice, registro)
-            return
+            hijo = nodo.hijos[indice]
+            if len(hijo.claves) == self.orden - 1:
+                self._dividir_hijo(nodo, indice)
+                if identificador >= nodo.claves[indice]:
+                    indice += 1
+            nodo = nodo.hijos[indice]
 
         indice = bisect.bisect_right(nodo.claves, identificador)
-        hijo = nodo.hijos[indice]
-        if len(hijo.claves) == self.M - 1:
-            self._dividir_hijo(nodo, indice)
-            if identificador >= nodo.claves[indice]:
-                indice += 1
-        self._insertar_no_lleno(nodo.hijos[indice], identificador, registro)
+        nodo.claves.insert(indice, identificador)
+        nodo.valores.insert(indice, registro)
 
     def listar(self) -> list[Registro]:
         nodo = self.raiz
@@ -279,6 +281,41 @@ class ArbolBPlus:
         while nodo is not None:
             registros.extend(nodo.valores)
             nodo = nodo.next
+        return registros
+
+    def altura(self) -> int:
+        altura = 1
+        nodo = self.raiz
+        while not nodo.hoja:
+            altura += 1
+            nodo = nodo.hijos[0]
+        return altura
+
+    def rango(self, id_min: int, id_max: int) -> list[Registro]:
+        if (
+            not isinstance(id_min, int)
+            or isinstance(id_min, bool)
+            or not isinstance(id_max, int)
+            or isinstance(id_max, bool)
+        ):
+            raise TypeError("Los límites del rango deben ser enteros.")
+        if id_min > id_max:
+            return []
+
+        nodo = self.raiz
+        while not nodo.hoja:
+            nodo = nodo.hijos[bisect.bisect_right(nodo.claves, id_min)]
+
+        registros: list[Registro] = []
+        indice = bisect.bisect_left(nodo.claves, id_min)
+        while nodo is not None:
+            while indice < len(nodo.claves) and nodo.claves[indice] <= id_max:
+                registros.append(nodo.valores[indice])
+                indice += 1
+            if indice < len(nodo.claves):
+                break
+            nodo = nodo.next
+            indice = 0
         return registros
 
     def __len__(self) -> int:
