@@ -511,12 +511,19 @@ def _guardar_altura(datos: pd.DataFrame, carpeta: Path) -> Path:
     ax_altura.set_ylabel("Altura (niveles)")
     _configurar_ejes(ax_altura)
 
-    combinada = tiempos.merge(
-        alturas[["N", "Modo", "Estructura", "Orden_BPlus", "Altura_Promedio"]],
-        on=["N", "Modo", "Estructura", "Orden_BPlus"],
-        how="inner",
-        suffixes=("", "_altura"),
-    ) if not alturas.empty else pd.DataFrame()
+    combinada = (
+        tiempos[["N", "Modo", "Estructura", "Tiempo_Promedio_s"]]
+        .drop_duplicates()
+        .merge(
+            alturas[["N", "Modo", "Estructura", "Altura_Promedio"]]
+            .drop_duplicates(),
+            on=["N", "Modo", "Estructura"],
+            how="inner",
+            suffixes=("", "_altura"),
+        )
+        if not alturas.empty
+        else pd.DataFrame()
+    )
     if combinada.empty or combinada["Altura_Promedio"].isna().all():
         _mensaje_sin_datos(ax_tiempo, "Sin datos compatibles de tiempo y altura.")
     else:
@@ -524,11 +531,13 @@ def _guardar_altura(datos: pd.DataFrame, carpeta: Path) -> Path:
             ["Estructura", "Modo"],
             sort=False,
         ):
-            ax_tiempo.scatter(
+            grupo = grupo.sort_values("N")
+            ax_tiempo.plot(
                 grupo["Altura_Promedio"],
                 grupo["Tiempo_Promedio_s"],
                 color=_PALETA_ESTRUCTURAS.get(str(estructura)),
-                marker=_MARCADORES_MODO.get(str(modo), "o"),
+                linestyle="-",
+                marker="o",
                 label=_etiqueta_serie(str(estructura), str(modo)),
             )
         _leyenda(ax_tiempo, titulo="Estructura y escenario")
@@ -538,7 +547,10 @@ def _guardar_altura(datos: pd.DataFrame, carpeta: Path) -> Path:
     _configurar_ejes(ax_tiempo)
     fig.suptitle("Altura y tiempo de búsqueda")
     ruta = carpeta / "altura.png"
-    _guardar(fig, ruta)
+    ruta_alias = carpeta / "altura_y_busqueda.png"
+    fig.savefig(ruta, dpi=_DPI, bbox_inches="tight")
+    fig.savefig(ruta_alias, dpi=_DPI, bbox_inches="tight")
+    plt.close(fig)
     return ruta
 
 
