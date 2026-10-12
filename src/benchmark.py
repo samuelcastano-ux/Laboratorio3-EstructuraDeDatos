@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import datetime
 import gc
 import importlib.metadata
-import multiprocessing
 import json
+import multiprocessing
 import os
 import platform
 import random
 import statistics
+import subprocess
 import sys
 import time
 import tracemalloc
@@ -28,6 +30,8 @@ TAMANIOS_N: tuple[int, ...] = (
     5_000,
     7_500,
     10_000,
+    20_000,
+    30_000,
     50_000,
     100_000,
     500_000,
@@ -40,8 +44,9 @@ M_RAPIDO: tuple[int, ...] = (10,)
 ORDEN_BPLUS = 16
 SEMILLA_BENCHMARK = 2026
 VENTANA_MINIMA_S = 1.0
-PRESUPUESTO_CONFIGURACION_S = 300.0
-TIMEOUT_CONFIGURACION_S = 600.0
+TIMEOUT_OPERACION_S = 600.0
+TIMEOUT_ABB_ORDENADO_INTERMEDIO_S = 1_200.0
+TAMANIOS_ABB_ORDENADO_INTERMEDIO = (20_000, 30_000, 50_000)
 _NOMBRES_ESTRUCTURAS = ("ListaEnlazada", "ABB", "ArbolBPlus")
 _COLUMNAS_CRUDAS = (
     "Experimento",
@@ -95,6 +100,14 @@ def _repeticiones(
 ) -> int:
     if rapido:
         return 2
+    if nombre == "ListaEnlazada" and n >= 100_000:
+        return 3
+    if (
+        nombre == "ABB"
+        and modo == "IDs Ordenados"
+        and n in TAMANIOS_ABB_ORDENADO_INTERMEDIO
+    ):
+        return 3
     if nombre == "ABB" and modo == "IDs Ordenados" and n == 100_000:
         return 3
     if n <= 10_000:
@@ -102,6 +115,16 @@ def _repeticiones(
     if n <= 100_000:
         return 5
     return 3
+
+
+def _timeout_operacion_s(nombre: str, modo: str, n: int) -> float:
+    if (
+        nombre == "ABB"
+        and modo == "IDs Ordenados"
+        and n in TAMANIOS_ABB_ORDENADO_INTERMEDIO
+    ):
+        return TIMEOUT_ABB_ORDENADO_INTERMEDIO_S
+    return TIMEOUT_OPERACION_S
 
 
 def _crear_estructura(nombre: str, orden_bplus: int = ORDEN_BPLUS) -> _Estructura:
@@ -190,7 +213,7 @@ def _validar_estructura(
 def _medir_ventana(
     operacion: Callable[[], Any],
     ventana_minima_s: float = VENTANA_MINIMA_S,
-    presupuesto_s: float = PRESUPUESTO_CONFIGURACION_S,
+    presupuesto_s: float = TIMEOUT_OPERACION_S,
 ) -> tuple[float, float, int]:
     gc_estaba_habilitado = gc.isenabled()
     gc.disable()
@@ -262,7 +285,21 @@ def _agregar_no_medido(
     orden_bplus: int | None,
     k: int,
     detalle: str,
+    repeticion: int | None = None,
 ) -> None:
+    if any(
+        fila["Experimento"] == experimento
+        and fila["N"] == n
+        and fila["Modo"] == modo
+        and fila["Estructura"] == estructura
+        and fila["M"] == m
+        and fila["Orden_BPlus"] == orden_bplus
+        and fila["K"] == k
+        and fila["Repeticion"] == repeticion
+        and fila["Estado"] == "no medido"
+        for fila in resultados
+    ):
+        return
     resultados.append(
         _crear_fila(
             experimento=experimento,
@@ -272,7 +309,7 @@ def _agregar_no_medido(
             m=m,
             orden_bplus=orden_bplus,
             k=k,
-            repeticion=None,
+            repeticion=repeticion,
             estado="no medido",
             tiempo_s="no medido",
             ventana_real_s="no medido",
@@ -284,7 +321,12 @@ def _agregar_no_medido(
 def es_viable(estructura: str, orden: str, N: int, M: int | None) -> bool:
     if estructura == "ABB" and orden == "IDs Ordenados" and N > 100_000:
         return False
-    if estructura == "ListaEnlazada" and N >= 500_000 and M is not None and M > 1_000:
+    if (
+        estructura == "ListaEnlazada"
+        and N >= 100_000
+        and M is not None
+        and M not in (10, 100, 1_000)
+    ):
         return False
     return True
 
@@ -297,8 +339,13 @@ def _motivo_no_viable(
 ) -> str:
     if estructura == "ABB" and orden == "IDs Ordenados" and n > 100_000:
         return "ABB con IDs ordenados se limita a N <= 100000 (K=3 en N=100000)."
-    if estructura == "ListaEnlazada" and n >= 500_000 and m is not None and m > 1_000:
-        return "ListaEnlazada con N >= 500000 se limita a M <= 1000."
+    if (
+        estructura == "ListaEnlazada"
+        and n >= 100_000
+        and m is not None
+        and m not in (10, 100, 1_000)
+    ):
+        return "ListaEnlazada con N >= 100000 se limita a M in {10, 100, 1000}."
     return "Configuración no viable."
 
 
@@ -351,7 +398,7 @@ def _agregar_medicion(
     k: int,
     repeticion: int,
     operacion: Callable[[], Any],
-    presupuesto_s: float = PRESUPUESTO_CONFIGURACION_S,
+    presupuesto_s: float = TIMEOUT_OPERACION_S,
     altura_niveles: int | None = None,
 ) -> None:
     def misma_configuracion(fila: dict[str, Any]) -> bool:
@@ -371,11 +418,6 @@ def _agregar_medicion(
     ):
         return
 
-    mediciones_previas = [
-        fila
-        for fila in resultados
-        if misma_configuracion(fila) and fila["Estado"] == "medido"
-    ]
     timeout_previo = next(
         (
             str(fila["Detalle"])
@@ -383,7 +425,10 @@ def _agregar_medicion(
             if misma_configuracion(fila)
             and fila["Estado"] == "no medido"
             and fila["Detalle"]
-            and "superó" in str(fila["Detalle"])
+            and (
+                "timeout" in str(fila["Detalle"]).lower()
+                or "superó" in str(fila["Detalle"]).lower()
+            )
         ),
         None,
     )
@@ -398,18 +443,21 @@ def _agregar_medicion(
             orden_bplus=orden_bplus,
             k=k,
             detalle=timeout_previo,
+            repeticion=repeticion,
         )
         return
 
+    mediciones_previas = [
+        fila
+        for fila in resultados
+        if misma_configuracion(fila) and fila["Estado"] == "medido"
+    ]
     tiempo_previo_s = sum(
         float(fila["Ventana_real_s"]) for fila in mediciones_previas
     )
-    presupuesto_s = min(
-        presupuesto_s,
-        PRESUPUESTO_CONFIGURACION_S - tiempo_previo_s,
-    )
+    presupuesto_s -= tiempo_previo_s
     if presupuesto_s <= 0:
-        detalle = "La configuración superó el presupuesto de cinco minutos."
+        detalle = "La operación superó su timeout acumulado."
         _agregar_no_medido(
             resultados,
             experimento=experimento,
@@ -420,6 +468,7 @@ def _agregar_medicion(
             orden_bplus=orden_bplus,
             k=k,
             detalle=detalle,
+            repeticion=repeticion,
         )
         return
     try:
@@ -438,13 +487,8 @@ def _agregar_medicion(
             orden_bplus=orden_bplus,
             k=k,
             detalle=str(error),
+            repeticion=repeticion,
         )
-        for fila in mediciones_previas:
-            fila["Estado"] = "no medido"
-            fila["Tiempo_s"] = "no medido"
-            fila["Ventana_real_s"] = "no medido"
-            fila["Repeticiones_ventana"] = None
-            fila["Detalle"] = str(error)
         return
     resultados.append(
         _crear_fila(
@@ -497,6 +541,24 @@ def _buscar_rango_completo(
     ]
 
 
+def _clave_combinacion(
+    experimento: str,
+    n: int,
+    modo: str,
+    estructura: str,
+    m: int | float | None,
+    orden_bplus: int | float | None,
+) -> tuple[Any, ...]:
+    return (
+        experimento,
+        int(n),
+        modo,
+        estructura,
+        None if m is None else int(m),
+        None if orden_bplus is None else int(orden_bplus),
+    )
+
+
 def _medir_configuracion(
     resultados: list[dict[str, Any]],
     *,
@@ -512,6 +574,9 @@ def _medir_configuracion(
     orden_bplus: int,
     cantidades_m: tuple[int, ...],
     inicio_benchmark: float,
+    canal_progreso: Any | None = None,
+    timeout_operacion_s: float = TIMEOUT_OPERACION_S,
+    combinaciones_medidas: set[tuple[Any, ...]] | None = None,
 ) -> None:
     m_configuracion = _m_max_viable(nombre, modo, n, cantidades_m)
     _imprimir_configuracion(nombre, modo, n, m_configuracion, inicio_benchmark)
@@ -556,6 +621,16 @@ def _medir_configuracion(
         m: int | None = None,
         altura_niveles: int | None = None,
     ) -> None:
+        orden_registro = orden_bplus if nombre == "ArbolBPlus" else None
+        if _clave_combinacion(
+            experimento,
+            n,
+            modo,
+            nombre,
+            m,
+            orden_registro,
+        ) in (combinaciones_medidas or set()):
+            return
         m_viabilidad = m if m is not None else m_configuracion
         _imprimir_configuracion(
             nombre,
@@ -577,33 +652,9 @@ def _medir_configuracion(
                 detalle=_motivo_no_viable(nombre, modo, n, m_viabilidad),
             )
             return
-        orden_registro = orden_bplus if nombre == "ArbolBPlus" else None
-        tiempo_previo_s = sum(
-            float(fila["Ventana_real_s"])
-            for fila in resultados
-            if fila["Estado"] == "medido"
-            and fila["Experimento"] == experimento
-            and fila["N"] == n
-            and fila["Modo"] == modo
-            and fila["Estructura"] == nombre
-            and fila["M"] == m
-            and fila["Orden_BPlus"] == orden_registro
-        )
-        presupuesto_restante_s = PRESUPUESTO_CONFIGURACION_S - tiempo_previo_s
-        if presupuesto_restante_s <= 0:
-            _agregar_no_medido(
-                resultados,
-                experimento=experimento,
-                n=n,
-                modo=modo,
-                estructura=nombre,
-                m=m,
-                orden_bplus=orden_registro,
-                k=k,
-                detalle="La configuración superó el presupuesto de cinco minutos.",
-            )
-            return
         antes = len(resultados)
+        if canal_progreso is not None:
+            canal_progreso.send(("inicio_operacion", experimento, m, repeticion))
         _agregar_medicion(
             resultados,
             experimento=experimento,
@@ -615,27 +666,11 @@ def _medir_configuracion(
             k=k,
             repeticion=repeticion,
             operacion=operacion,
-            presupuesto_s=presupuesto_restante_s,
+            presupuesto_s=timeout_operacion_s,
             altura_niveles=altura_niveles,
         )
-        if resultados[antes]["Estado"] == "no medido":
-            detalle = str(resultados[antes]["Detalle"])
-            if "superó" in detalle:
-                for fila in resultados:
-                    if (
-                        fila["Experimento"] == experimento
-                        and fila["N"] == n
-                        and fila["Modo"] == modo
-                        and fila["Estructura"] == nombre
-                        and fila["M"] == m
-                        and fila["Orden_BPlus"] == orden_registro
-                        and fila["Estado"] == "medido"
-                    ):
-                        fila["Estado"] = "no medido"
-                        fila["Tiempo_s"] = "no medido"
-                        fila["Ventana_real_s"] = "no medido"
-                        fila["Repeticiones_ventana"] = None
-                        fila["Detalle"] = detalle
+        if canal_progreso is not None:
+            canal_progreso.send(("fin_operacion", resultados[antes:]))
 
     def construir_una_vez() -> None:
         _construir(nombre, registros, orden_bplus)
@@ -691,15 +726,28 @@ def _medir_configuracion(
                 k=k,
                 detalle=memoria_exclusion,
             )
-        elif not any(
-            fila["Experimento"] == "Memoria"
-            and fila["N"] == n
-            and fila["Modo"] == modo
-            and fila["Estructura"] == nombre
-            and fila["Orden_BPlus"]
-            == (orden_bplus if nombre == "ArbolBPlus" else None)
-            for fila in resultados
+        elif (
+            _clave_combinacion(
+                "Memoria",
+                n,
+                modo,
+                nombre,
+                None,
+                orden_bplus if nombre == "ArbolBPlus" else None,
+            )
+            not in (combinaciones_medidas or set())
+            and not any(
+                fila["Experimento"] == "Memoria"
+                and fila["N"] == n
+                and fila["Modo"] == modo
+                and fila["Estructura"] == nombre
+                and fila["Orden_BPlus"]
+                == (orden_bplus if nombre == "ArbolBPlus" else None)
+                for fila in resultados
+            )
         ):
+            if canal_progreso is not None:
+                canal_progreso.send(("inicio_operacion", "Memoria", None, None))
             memoria_peak_bytes = _medir_memoria(nombre, registros, orden_bplus)
             resultados.append(
                 _crear_fila(
@@ -716,6 +764,8 @@ def _medir_configuracion(
                     detalle="Pico tracemalloc en bytes; construcción fuera del cronómetro.",
                 )
             )
+            if canal_progreso is not None:
+                canal_progreso.send(("fin_operacion", resultados[-1:]))
 
 
 def _trabajador_configuracion(
@@ -726,9 +776,12 @@ def _trabajador_configuracion(
     k: int,
     cantidades_m: tuple[int, ...],
     inicio_benchmark: float,
+    resultados_previos: list[dict[str, Any]],
+    timeout_operacion_s: float,
+    combinaciones_medidas: set[tuple[Any, ...]],
 ) -> None:
     try:
-        resultados: list[dict[str, Any]] = []
+        resultados = list(resultados_previos)
         repeticiones = 1 if not es_viable(
             nombre,
             modo,
@@ -765,6 +818,9 @@ def _trabajador_configuracion(
                 orden_bplus=ORDEN_BPLUS,
                 cantidades_m=cantidades_m,
                 inicio_benchmark=inicio_benchmark,
+                canal_progreso=canal,
+                timeout_operacion_s=timeout_operacion_s,
+                combinaciones_medidas=combinaciones_medidas,
             )
         canal.send(("ok", resultados))
     except Exception:
@@ -778,88 +834,118 @@ def _ejecutar_configuracion_con_timeout(
     k: int,
     cantidades_m: tuple[int, ...],
     inicio_benchmark: float,
-) -> list[dict[str, Any]] | None:
+    resultados_previos: list[dict[str, Any]] | None = None,
+    combinaciones_medidas: set[tuple[Any, ...]] | None = None,
+) -> list[dict[str, Any]]:
     contexto = multiprocessing.get_context("spawn")
-    canal_receptor, canal_emisor = contexto.Pipe(duplex=False)
-    proceso = contexto.Process(
-        target=_trabajador_configuracion,
-        args=(canal_emisor, nombre, modo, n, k, cantidades_m, inicio_benchmark),
-    )
-    proceso.start()
-    canal_emisor.close()
-    if not canal_receptor.poll(TIMEOUT_CONFIGURACION_S):
-        proceso.terminate()
-        proceso.join()
-        canal_receptor.close()
-        return None
-    try:
-        estado, contenido = canal_receptor.recv()
-    except (EOFError, OSError) as error:
-        proceso.join()
-        canal_receptor.close()
-        raise RuntimeError(
-            f"El proceso de benchmark terminó sin resultados para "
-            f"{nombre}, {modo}, N={n}."
-        ) from error
-    proceso.join()
-    canal_receptor.close()
-    if proceso.exitcode != 0:
-        raise RuntimeError(
-            f"El proceso de benchmark falló para {nombre}, {modo}, N={n} "
-            f"(código {proceso.exitcode})."
+    acumulados = list(resultados_previos or [])
+    timeout_operacion_s = _timeout_operacion_s(nombre, modo, n)
+    tiempo_usado_operacion: dict[tuple[str, int | None], float] = {}
+    while True:
+        canal_receptor, canal_emisor = contexto.Pipe(duplex=False)
+        proceso = contexto.Process(
+            target=_trabajador_configuracion,
+            args=(
+                canal_emisor,
+                nombre,
+                modo,
+                n,
+                k,
+                cantidades_m,
+                inicio_benchmark,
+                acumulados,
+                timeout_operacion_s,
+                combinaciones_medidas or set(),
+            ),
         )
-    if estado == "error":
-        raise RuntimeError(contenido)
-    return contenido
+        proceso.start()
+        canal_emisor.close()
+        operacion_actual: tuple[str, int | None, int | None] | None = None
+        clave_operacion_actual: tuple[str, int | None] | None = None
+        inicio_operacion = 0.0
+        while True:
+            espera = 0.1
+            if operacion_actual is not None:
+                restante = timeout_operacion_s - tiempo_usado_operacion.get(
+                    clave_operacion_actual,
+                    0.0,
+                ) - (
+                    time.monotonic() - inicio_operacion
+                )
+                if restante <= 0:
+                    proceso.terminate()
+                    proceso.join()
+                    experimento, m, repeticion = operacion_actual
+                    _agregar_no_medido(
+                        acumulados,
+                        experimento=experimento,
+                        n=n,
+                        modo=modo,
+                        estructura=nombre,
+                        m=m,
+                        orden_bplus=ORDEN_BPLUS if nombre == "ArbolBPlus" else None,
+                        k=k,
+                        detalle=(
+                            f"La operación superó el timeout de "
+                            f"{timeout_operacion_s:.0f} segundos; se abortó solo "
+                            "esta operación."
+                        ),
+                        repeticion=repeticion,
+                    )
+                    print(
+                        f"Timeout de {experimento} tras "
+                        f"{timeout_operacion_s:.0f} s; continúa la configuración."
+                    )
+                    break
+                espera = min(espera, restante)
 
-
-def _agregar_configuracion_no_medida(
-    resultados: list[dict[str, Any]],
-    *,
-    nombre: str,
-    modo: str,
-    n: int,
-    k: int,
-    cantidades_m: tuple[int, ...],
-    detalle_timeout: str | None = None,
-) -> None:
-    m_configuracion = _m_max_viable(nombre, modo, n, cantidades_m)
-    mediciones = (
-        ("Insercion", None, m_configuracion),
-        *(("Busqueda", m, m) for m in cantidades_m),
-        ("BusquedaInexistente", 1_000, 1_000),
-        ("Listar", None, m_configuracion),
-        ("Altura", None, m_configuracion),
-        ("Rango", None, m_configuracion),
-        ("Memoria", None, m_configuracion),
-    )
-    for experimento, m_fila, m_viabilidad in mediciones:
-        orden_bplus = ORDEN_BPLUS if nombre == "ArbolBPlus" else None
-        viable = es_viable(nombre, modo, n, m_viabilidad)
-        if experimento == "Memoria":
-            viable = _memoria_viable(nombre, modo, n, m_viabilidad)
-        if viable:
-            detalle = detalle_timeout or "La configuración superó 600 segundos."
-        elif experimento == "Memoria" and es_viable(
-            nombre,
-            modo,
-            n,
-            m_viabilidad,
-        ):
-            detalle = "Para N >= 500000 la memoria se mide solo con B+ y ABB aleatorio."
-        else:
-            detalle = _motivo_no_viable(nombre, modo, n, m_viabilidad)
-        _agregar_no_medido(
-            resultados,
-            experimento=experimento,
-            n=n,
-            modo=modo,
-            estructura=nombre,
-            m=m_fila,
-            orden_bplus=orden_bplus,
-            k=k,
-            detalle=detalle,
-        )
+            if canal_receptor.poll(espera):
+                try:
+                    mensaje = canal_receptor.recv()
+                except (EOFError, OSError) as error:
+                    proceso.join()
+                    canal_receptor.close()
+                    raise RuntimeError(
+                        f"El proceso de benchmark terminó sin resultados para "
+                        f"{nombre}, {modo}, N={n}."
+                    ) from error
+                if mensaje[0] == "inicio_operacion":
+                    _, experimento, m, repeticion = mensaje
+                    operacion_actual = (experimento, m, repeticion)
+                    clave_operacion_actual = (experimento, m)
+                    inicio_operacion = time.monotonic()
+                elif mensaje[0] == "fin_operacion":
+                    acumulados.extend(mensaje[1])
+                    if operacion_actual is not None:
+                        clave = (operacion_actual[0], operacion_actual[1])
+                        tiempo_usado_operacion[clave] = (
+                            tiempo_usado_operacion.get(clave, 0.0)
+                            + time.monotonic()
+                            - inicio_operacion
+                        )
+                    operacion_actual = None
+                    clave_operacion_actual = None
+                elif mensaje[0] == "ok":
+                    proceso.join()
+                    canal_receptor.close()
+                    if proceso.exitcode != 0:
+                        raise RuntimeError(
+                            f"El proceso de benchmark falló para {nombre}, "
+                            f"{modo}, N={n} (código {proceso.exitcode})."
+                        )
+                    return mensaje[1]
+                elif mensaje[0] == "error":
+                    proceso.join()
+                    canal_receptor.close()
+                    raise RuntimeError(mensaje[1])
+            elif not proceso.is_alive():
+                proceso.join()
+                canal_receptor.close()
+                raise RuntimeError(
+                    f"El proceso de benchmark terminó inesperadamente para "
+                    f"{nombre}, {modo}, N={n} (código {proceso.exitcode})."
+                )
+        canal_receptor.close()
 
 
 def _trabajador_barrido_configuracion(
@@ -871,6 +957,7 @@ def _trabajador_barrido_configuracion(
     cantidades_m: tuple[int, ...],
     semilla: int,
     inicio_benchmark: float,
+    combinaciones_medidas: set[tuple[Any, ...]],
 ) -> None:
     try:
         resultados = list(canal_receptor_copia)
@@ -902,18 +989,26 @@ def _trabajador_barrido_configuracion(
                 m_configuracion,
                 inicio_benchmark,
             )
-            _agregar_medicion(
-                resultados,
-                experimento="Insercion",
-                n=n,
-                modo=modo,
-                estructura="ArbolBPlus",
-                m=None,
-                orden_bplus=orden_bplus,
-                k=k,
-                repeticion=numero_repeticion,
-                operacion=insertar_todos,
-            )
+            if _clave_combinacion(
+                "Insercion", n, modo, "ArbolBPlus", None, orden_bplus
+            ) not in combinaciones_medidas:
+                inicio_resultado = len(resultados)
+                canal.send(
+                    ("inicio_operacion", "Insercion", None, numero_repeticion)
+                )
+                _agregar_medicion(
+                    resultados,
+                    experimento="Insercion",
+                    n=n,
+                    modo=modo,
+                    estructura="ArbolBPlus",
+                    m=None,
+                    orden_bplus=orden_bplus,
+                    k=k,
+                    repeticion=numero_repeticion,
+                    operacion=insertar_todos,
+                )
+                canal.send(("fin_operacion", resultados[inicio_resultado:]))
             for cantidad_m in cantidades_m:
                 consultas_m = consultas[:cantidad_m]
 
@@ -928,18 +1023,31 @@ def _trabajador_barrido_configuracion(
                     cantidad_m,
                     inicio_benchmark,
                 )
-                _agregar_medicion(
-                    resultados,
-                    experimento="Busqueda",
-                    n=n,
-                    modo=modo,
-                    estructura="ArbolBPlus",
-                    m=cantidad_m,
-                    orden_bplus=orden_bplus,
-                    k=k,
-                    repeticion=numero_repeticion,
-                    operacion=buscar_todos,
-                )
+                if _clave_combinacion(
+                    "Busqueda", n, modo, "ArbolBPlus", cantidad_m, orden_bplus
+                ) not in combinaciones_medidas:
+                    inicio_resultado = len(resultados)
+                    canal.send(
+                        (
+                            "inicio_operacion",
+                            "Busqueda",
+                            cantidad_m,
+                            numero_repeticion,
+                        )
+                    )
+                    _agregar_medicion(
+                        resultados,
+                        experimento="Busqueda",
+                        n=n,
+                        modo=modo,
+                        estructura="ArbolBPlus",
+                        m=cantidad_m,
+                        orden_bplus=orden_bplus,
+                        k=k,
+                        repeticion=numero_repeticion,
+                        operacion=buscar_todos,
+                    )
+                    canal.send(("fin_operacion", resultados[inicio_resultado:]))
             for experimento, operacion, m in (
                 (
                     "BusquedaInexistente",
@@ -961,21 +1069,31 @@ def _trabajador_barrido_configuracion(
                     m if m is not None else m_configuracion,
                     inicio_benchmark,
                 )
-                _agregar_medicion(
-                    resultados,
-                    experimento=experimento,
-                    n=n,
-                    modo=modo,
-                    estructura="ArbolBPlus",
-                    m=m,
-                    orden_bplus=orden_bplus,
-                    k=k,
-                    repeticion=numero_repeticion,
-                    operacion=operacion,
-                    altura_niveles=(
-                        estructura.altura() if experimento == "Altura" else None
-                    ),
-                )
+                if _clave_combinacion(
+                    experimento, n, modo, "ArbolBPlus", m, orden_bplus
+                ) not in combinaciones_medidas:
+                    inicio_resultado = len(resultados)
+                    canal.send(
+                        ("inicio_operacion", experimento, m, numero_repeticion)
+                    )
+                    _agregar_medicion(
+                        resultados,
+                        experimento=experimento,
+                        n=n,
+                        modo=modo,
+                        estructura="ArbolBPlus",
+                        m=m,
+                        orden_bplus=orden_bplus,
+                        k=k,
+                        repeticion=numero_repeticion,
+                        operacion=operacion,
+                        altura_niveles=(
+                            estructura.altura()
+                            if experimento == "Altura"
+                            else None
+                        ),
+                    )
+                    canal.send(("fin_operacion", resultados[inicio_resultado:]))
         memoria_existente = any(
             fila["Experimento"] == "Memoria"
             and fila["N"] == n
@@ -984,11 +1102,18 @@ def _trabajador_barrido_configuracion(
             and fila["Orden_BPlus"] == orden_bplus
             for fila in resultados
         )
-        if not memoria_existente and _memoria_viable(
-            "ArbolBPlus",
-            modo,
-            n,
-            m_configuracion,
+        if (
+            not memoria_existente
+            and _clave_combinacion(
+                "Memoria", n, modo, "ArbolBPlus", None, orden_bplus
+            )
+            not in combinaciones_medidas
+            and _memoria_viable(
+                "ArbolBPlus",
+                modo,
+                n,
+                m_configuracion,
+            )
         ):
             _imprimir_configuracion(
                 "ArbolBPlus",
@@ -997,6 +1122,7 @@ def _trabajador_barrido_configuracion(
                 None,
                 inicio_benchmark,
             )
+            canal.send(("inicio_operacion", "Memoria", None, None))
             memoria_peak_bytes = _medir_memoria(
                 "ArbolBPlus",
                 registros,
@@ -1017,6 +1143,7 @@ def _trabajador_barrido_configuracion(
                     detalle="Pico tracemalloc en bytes; construcción fuera del cronómetro.",
                 )
             )
+            canal.send(("fin_operacion", resultados[-1:]))
         canal.send(("ok", resultados[longitud_inicial:]))
     except Exception:
         canal.send(("error", traceback.format_exc()))
@@ -1027,6 +1154,8 @@ def _agregar_barrido_orden(
     generador: random.Random,
     cantidades_m: tuple[int, ...],
     carpeta_resultados: Path | None = None,
+    combinaciones_medidas: set[tuple[Any, ...]] | None = None,
+    resumen_previo: pd.DataFrame | None = None,
 ) -> None:
     n = 100_000
     k = 2 if cantidades_m == M_RAPIDO else 5
@@ -1062,13 +1191,7 @@ def _agregar_barrido_orden(
                 for experimento, m in mediciones_esperadas
                 for numero_repeticion in repeticiones_esperadas
             ) and any(fila["Experimento"] == "Memoria" for fila in previas)
-            timeout_previo = any(
-                fila["Estado"] == "no medido"
-                and fila["Detalle"]
-                and "timeout de" in str(fila["Detalle"])
-                for fila in previas
-            )
-            if completo or timeout_previo:
+            if completo:
                 continue
 
             _imprimir_configuracion(
@@ -1079,87 +1202,137 @@ def _agregar_barrido_orden(
                 inicio_benchmark,
             )
             contexto = multiprocessing.get_context("spawn")
-            canal_receptor, canal_emisor = contexto.Pipe(duplex=False)
-            proceso = contexto.Process(
-                target=_trabajador_barrido_configuracion,
-                args=(
-                    canal_emisor,
-                    previas,
-                    modo,
-                    orden_bplus,
-                    k,
-                    cantidades_m,
-                    generador.randrange(1, 2**31),
-                    inicio_benchmark,
-                ),
-            )
-            proceso.start()
-            canal_emisor.close()
-            if not canal_receptor.poll(TIMEOUT_CONFIGURACION_S):
-                proceso.terminate()
-                proceso.join()
-                detalle = (
-                    "La configuración superó el timeout de "
-                    f"{TIMEOUT_CONFIGURACION_S:.0f} segundos; se abortó."
+            tiempo_usado_operacion: dict[tuple[str, int | None], float] = {}
+            while True:
+                canal_receptor, canal_emisor = contexto.Pipe(duplex=False)
+                proceso = contexto.Process(
+                    target=_trabajador_barrido_configuracion,
+                    args=(
+                        canal_emisor,
+                        previas,
+                        modo,
+                        orden_bplus,
+                        k,
+                        cantidades_m,
+                        generador.randrange(1, 2**31),
+                        inicio_benchmark,
+                        combinaciones_medidas or set(),
+                    ),
                 )
-                mediciones = (
-                    [("Insercion", None)]
-                    + [("Busqueda", m) for m in cantidades_m]
-                    + [
-                        ("BusquedaInexistente", 1_000),
-                        ("Listar", None),
-                        ("Altura", None),
-                        ("Rango", None),
-                    ]
-                )
-                for experimento, m in mediciones:
-                    _agregar_no_medido(
-                        resultados,
-                        experimento=experimento,
-                        n=n,
-                        modo=modo,
-                        estructura="ArbolBPlus",
-                        m=m,
-                        orden_bplus=orden_bplus,
-                        k=k,
-                        detalle=detalle,
-                    )
-                if not any(fila["Experimento"] == "Memoria" for fila in previas):
-                    _agregar_no_medido(
-                        resultados,
-                        experimento="Memoria",
-                        n=n,
-                        modo=modo,
-                        estructura="ArbolBPlus",
-                        m=None,
-                        orden_bplus=orden_bplus,
-                        k=k,
-                        detalle=detalle,
-                    )
+                proceso.start()
+                canal_emisor.close()
+                operacion_actual: tuple[str, int | None, int | None] | None = None
+                clave_operacion_actual: tuple[str, int | None] | None = None
+                inicio_operacion = 0.0
+                progreso: list[dict[str, Any]] = []
+                timeout_ocurrido = False
+                while True:
+                    espera = 0.1
+                    if operacion_actual is not None:
+                        restante = TIMEOUT_OPERACION_S - tiempo_usado_operacion.get(
+                            clave_operacion_actual,
+                            0.0,
+                        ) - (
+                            time.monotonic() - inicio_operacion
+                        )
+                        if restante <= 0:
+                            proceso.terminate()
+                            proceso.join()
+                            experimento, m, repeticion = operacion_actual
+                            _agregar_no_medido(
+                                resultados,
+                                experimento=experimento,
+                                n=n,
+                                modo=modo,
+                                estructura="ArbolBPlus",
+                                m=m,
+                                orden_bplus=orden_bplus,
+                                k=k,
+                                detalle=(
+                                    "La operación superó el timeout de "
+                                    f"{TIMEOUT_OPERACION_S:.0f} segundos; se "
+                                    "abortó solo esta operación."
+                                ),
+                                repeticion=repeticion,
+                            )
+                            resultados.extend(progreso)
+                            print(
+                                f"Timeout de {experimento} tras "
+                                f"{TIMEOUT_OPERACION_S:.0f} s; continúa el barrido."
+                            )
+                            timeout_ocurrido = True
+                            break
+                        espera = min(espera, restante)
+                    if canal_receptor.poll(espera):
+                        try:
+                            mensaje = canal_receptor.recv()
+                        except (EOFError, OSError) as error:
+                            proceso.join()
+                            canal_receptor.close()
+                            raise RuntimeError(
+                                f"El barrido B+ terminó sin resultados para "
+                                f"{modo}, N={n}, orden={orden_bplus}."
+                            ) from error
+                        if mensaje[0] == "inicio_operacion":
+                            _, experimento, m, repeticion = mensaje
+                            operacion_actual = (experimento, m, repeticion)
+                            clave_operacion_actual = (experimento, m)
+                            inicio_operacion = time.monotonic()
+                        elif mensaje[0] == "fin_operacion":
+                            progreso.extend(mensaje[1])
+                            if operacion_actual is not None:
+                                clave = (
+                                    operacion_actual[0],
+                                    operacion_actual[1],
+                                )
+                                tiempo_usado_operacion[clave] = (
+                                    tiempo_usado_operacion.get(clave, 0.0)
+                                    + time.monotonic()
+                                    - inicio_operacion
+                                )
+                            operacion_actual = None
+                            clave_operacion_actual = None
+                        elif mensaje[0] == "ok":
+                            proceso.join()
+                            canal_receptor.close()
+                            if proceso.exitcode != 0:
+                                raise RuntimeError(
+                                    f"El barrido B+ falló para {modo}, N={n}, "
+                                    f"orden={orden_bplus} "
+                                    f"(código {proceso.exitcode})."
+                                )
+                            resultados.extend(mensaje[1])
+                            break
+                        elif mensaje[0] == "error":
+                            proceso.join()
+                            canal_receptor.close()
+                            raise RuntimeError(mensaje[1])
+                    elif not proceso.is_alive():
+                        proceso.join()
+                        canal_receptor.close()
+                        raise RuntimeError(
+                            f"El barrido B+ terminó inesperadamente para "
+                            f"{modo}, N={n}, orden={orden_bplus} "
+                            f"(código {proceso.exitcode})."
+                        )
                 canal_receptor.close()
-                print(f"Timeout tras {TIMEOUT_CONFIGURACION_S:.0f} s; no medido.")
-            else:
-                try:
-                    estado, contenido = canal_receptor.recv()
-                except (EOFError, OSError) as error:
-                    proceso.join()
-                    canal_receptor.close()
-                    raise RuntimeError(
-                        f"El barrido B+ terminó sin resultados para {modo}, "
-                        f"N={n}, orden={orden_bplus}."
-                    ) from error
-                proceso.join()
-                canal_receptor.close()
-                if proceso.exitcode != 0:
-                    raise RuntimeError(
-                        f"El barrido B+ falló para {modo}, N={n}, "
-                        f"orden={orden_bplus} (código {proceso.exitcode})."
-                    )
-                if estado == "error":
-                    raise RuntimeError(contenido)
-                resultados.extend(contenido)
+                if not timeout_ocurrido:
+                    break
+                previas.extend(progreso)
+                previas = [
+                    fila
+                    for fila in resultados
+                    if fila["N"] == n
+                    and fila["Modo"] == modo
+                    and fila["Estructura"] == "ArbolBPlus"
+                    and fila["Orden_BPlus"] == orden_bplus
+                ]
             if carpeta_resultados is not None:
-                _guardar_resultados(resultados, carpeta_resultados)
+                _guardar_resultados(
+                    resultados,
+                    carpeta_resultados,
+                    resumen_previo,
+                )
 
 
 def _identificar_atipicos(tiempos: list[float]) -> list[bool]:
@@ -1278,15 +1451,41 @@ def _memoria_total_bytes() -> int | None:
 
 
 def _ficha_hardware_software() -> dict[str, Any]:
+    cpu_name = (
+        platform.processor()
+        or os.environ.get("PROCESSOR_IDENTIFIER")
+        or platform.machine()
+    )
+    if platform.system() == "Windows":
+        try:
+            cmd = 'powershell -Command "Get-CimInstance -ClassName Win32_Processor | Select-Object -ExpandProperty Name"'
+            salida = subprocess.check_output(cmd, shell=True).decode().strip()
+            if salida:
+                cpu_name = salida
+        except Exception:
+            pass
+
+    os_name = platform.system()
+    os_readable = platform.platform()
+    if os_name == "Windows":
+        try:
+            build = int(platform.version().split(".")[-1])
+            if build >= 22000:
+                os_readable = f"Windows 11 (build {build})"
+            else:
+                os_readable = f"Windows 10 (build {build})"
+        except Exception:
+            pass
+
+    ram_bytes = _memoria_total_bytes()
+    ram_gb = round(ram_bytes / (1024**3), 2) if ram_bytes else None
+
     return {
-        "cpu": (
-            platform.processor()
-            or os.environ.get("PROCESSOR_IDENTIFIER")
-            or platform.machine()
-        ),
+        "cpu": cpu_name,
         "nucleos_logicos": os.cpu_count(),
-        "ram_total_bytes": _memoria_total_bytes(),
-        "sistema_operativo": platform.platform(),
+        "ram_gb": ram_gb,
+        "ram_total_bytes": ram_bytes,
+        "sistema_operativo": os_readable,
         "python": sys.version,
         "python_implementacion": platform.python_implementation(),
         "paquetes": {
@@ -1294,6 +1493,7 @@ def _ficha_hardware_software() -> dict[str, Any]:
             for paquete in ("numpy", "pandas", "matplotlib", "seaborn")
         },
         "semilla": SEMILLA_BENCHMARK,
+        "fecha_iso": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "fecha_unix": time.time(),
     }
 
@@ -1335,9 +1535,66 @@ def _segundos_estimados_minimos(
 def _guardar_resultados(
     resultados: list[dict[str, Any]],
     carpeta_resultados: Path,
+    resumen_previo: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     resultados_crudos = pd.DataFrame(resultados, columns=_COLUMNAS_CRUDAS)
     resultados_resumen = _resumir(resultados_crudos)
+    if resumen_previo is not None and not resumen_previo.empty:
+        claves_medidas_actuales = {
+            _clave_combinacion(
+                str(fila["Experimento"]),
+                int(float(fila["N"])),
+                str(fila["Modo"]),
+                str(fila["Estructura"]),
+                fila["M"] if pd.notna(fila["M"]) else None,
+                fila["Orden_BPlus"]
+                if pd.notna(fila["Orden_BPlus"])
+                else None,
+            )
+            for fila in resultados_resumen.to_dict(orient="records")
+            if fila["Estado"] == "medido"
+        }
+        conservadas: list[dict[str, Any]] = []
+        claves_conservadas: set[tuple[Any, ...]] = set()
+        for fila in resumen_previo.to_dict(orient="records"):
+            if fila["Estado"] != "medido" or pd.isna(fila["N"]):
+                continue
+            clave = _clave_combinacion(
+                str(fila["Experimento"]),
+                int(float(fila["N"])),
+                str(fila["Modo"]),
+                str(fila["Estructura"]),
+                fila["M"] if pd.notna(fila["M"]) else None,
+                fila["Orden_BPlus"]
+                if pd.notna(fila["Orden_BPlus"])
+                else None,
+            )
+            if clave not in claves_medidas_actuales and clave not in claves_conservadas:
+                conservadas.append(fila)
+                claves_conservadas.add(clave)
+        if conservadas:
+            claves_antiguas = set(claves_conservadas)
+            indices_a_conservar = [
+                _clave_combinacion(
+                    str(fila["Experimento"]),
+                    int(float(fila["N"])),
+                    str(fila["Modo"]),
+                    str(fila["Estructura"]),
+                    fila["M"] if pd.notna(fila["M"]) else None,
+                    fila["Orden_BPlus"]
+                    if pd.notna(fila["Orden_BPlus"])
+                    else None,
+                )
+                not in claves_antiguas
+                for fila in resultados_resumen.to_dict(orient="records")
+            ]
+            resultados_resumen = pd.concat(
+                [
+                    resultados_resumen.loc[indices_a_conservar],
+                    pd.DataFrame(conservadas),
+                ],
+                ignore_index=True,
+            )
     resultados_crudos.to_csv(
         carpeta_resultados / "resultados_crudos.csv",
         index=False,
@@ -1369,8 +1626,9 @@ def ejecutar_benchmark_completo(
         f"¿La estimación pasa de 2 horas?: {'Sí' if estimacion_s > 7_200 else 'No'}"
     )
     print(
-        "Viabilidad: ABB ordenado hasta N=100000 (K=3 en ese límite); "
-        "ListaEnlazada para N>=500000 solo con M<=1000; memoria para "
+        "Viabilidad: ABB ordenado hasta N=100000 (K=3 en N=20000, "
+        "30000, 50000 y 100000); ListaEnlazada para N>=100000 con K=3 "
+        "y M en {10, 100, 1000}; memoria para "
         "N>=500000 solo con B+ y ABB aleatorio."
     )
 
@@ -1378,22 +1636,48 @@ def ejecutar_benchmark_completo(
     carpeta_resultados = Path(__file__).resolve().parent.parent / "resultados"
     carpeta_resultados.mkdir(parents=True, exist_ok=True)
     ruta_crudos = carpeta_resultados / "resultados_crudos.csv"
+    ruta_resumen = carpeta_resultados / "resultados_benchmark.csv"
     resultados: list[dict[str, Any]] = []
+    resumen_previo: pd.DataFrame | None = None
+    combinaciones_medidas: set[tuple[Any, ...]] = set()
+    if reanudar and ruta_resumen.is_file():
+        resumen_previo = pd.read_csv(ruta_resumen)
+        combinaciones_medidas = {
+            _clave_combinacion(
+                str(fila["Experimento"]),
+                int(float(fila["N"])),
+                str(fila["Modo"]),
+                str(fila["Estructura"]),
+                fila["M"] if pd.notna(fila["M"]) else None,
+                fila["Orden_BPlus"]
+                if pd.notna(fila["Orden_BPlus"])
+                else None,
+            )
+            for fila in resumen_previo.to_dict(orient="records")
+            if fila["Estado"] == "medido" and pd.notna(fila["N"])
+        }
     if reanudar and ruta_crudos.is_file():
         resultados = pd.read_csv(ruta_crudos).to_dict(orient="records")
+        for fila in resultados:
+            for columna, valor in fila.items():
+                if pd.isna(valor):
+                    fila[columna] = None
 
     generador = random.Random(SEMILLA_BENCHMARK)
-    tamanios_previos = {
-        int(float(fila["N"]))
-        for fila in resultados
-        if pd.notna(fila.get("N"))
-    }
     tamanios_orden = list(tamanios)
     generador.shuffle(tamanios_orden)
     for n in tamanios_orden:
-        if reanudar and n in tamanios_previos:
-            print(f"Reanudación: se omite N={n}; ya está guardado en el CSV.")
-            continue
+        # Si se activa --reanudar, comprueba si N ya terminó al 100% exitosamente
+        if reanudar and resultados:
+            filas_n = [f for f in resultados if int(float(f.get("N") or 0)) == n]
+            
+            # Omitir N únicamente si existen registros Y NINGUNO está marcado como 'no medido'
+            if filas_n and all(f.get("Estado") == "medido" for f in filas_n):
+                print(f"Reanudación: N={n} está medido al 100%; se omite.")
+                continue
+            
+            # Si N tenía errores o 'no medido', descartar los datos viejos de N para medirlo limpio
+            resultados = [f for f in resultados if int(float(f.get("N") or 0)) != n]
         modos = ["IDs Aleatorios", "IDs Ordenados"]
         generador.shuffle(modos)
         for modo in modos:
@@ -1408,6 +1692,13 @@ def ejecutar_benchmark_completo(
                     _m_max_viable(nombre, modo, n, cantidades_m),
                     inicio_benchmark,
                 )
+                previas = [
+                    fila
+                    for fila in resultados
+                    if int(float(fila["N"])) == n
+                    and fila["Modo"] == modo
+                    and fila["Estructura"] == nombre
+                ]
                 mediciones = _ejecutar_configuracion_con_timeout(
                     nombre,
                     modo,
@@ -1415,29 +1706,20 @@ def ejecutar_benchmark_completo(
                     k,
                     cantidades_m,
                     inicio_benchmark,
+                    resultados_previos=previas,
+                    combinaciones_medidas=combinaciones_medidas,
                 )
-                if mediciones is None:
-                    detalle_timeout = (
-                        "La configuración superó el timeout de "
-                        f"{TIMEOUT_CONFIGURACION_S:.0f} segundos; se abortó."
+                resultados = [
+                    fila
+                    for fila in resultados
+                    if not (
+                        int(float(fila["N"])) == n
+                        and fila["Modo"] == modo
+                        and fila["Estructura"] == nombre
                     )
-                    _agregar_configuracion_no_medida(
-                        resultados,
-                        nombre=nombre,
-                        modo=modo,
-                        n=n,
-                        k=k,
-                        cantidades_m=cantidades_m,
-                        detalle_timeout=detalle_timeout,
-                    )
-                    print(
-                        f"Timeout tras {TIMEOUT_CONFIGURACION_S:.0f} s; "
-                        "configuración marcada como no medida."
-                    )
-                else:
-                    resultados.extend(mediciones)
-        _guardar_resultados(resultados, carpeta_resultados)
-        tamanios_previos.add(n)
+                ]
+                resultados.extend(mediciones)
+        _guardar_resultados(resultados, carpeta_resultados, resumen_previo)
         print(f"CSV parcial guardado al terminar N={n}.")
 
     if not rapido:
@@ -1446,10 +1728,12 @@ def ejecutar_benchmark_completo(
             generador,
             cantidades_m,
             carpeta_resultados,
+            combinaciones_medidas,
+            resumen_previo,
         )
-        _guardar_resultados(resultados, carpeta_resultados)
+        _guardar_resultados(resultados, carpeta_resultados, resumen_previo)
     (carpeta_resultados / "ficha.json").write_text(
         json.dumps(_ficha_hardware_software(), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    return _guardar_resultados(resultados, carpeta_resultados)
+    return _guardar_resultados(resultados, carpeta_resultados, resumen_previo)

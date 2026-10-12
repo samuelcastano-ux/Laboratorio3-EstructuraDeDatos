@@ -69,6 +69,7 @@ def _cargar_resultados(ruta_csv: Path) -> pd.DataFrame:
         "M",
         "Orden_BPlus",
         "Tiempo_Promedio_s",
+        "Desviacion_Muestral_s",
         "IC95_Inferior_s",
         "IC95_Superior_s",
         "Memoria_Promedio_bytes",
@@ -115,6 +116,31 @@ def _leyenda(ax: Axes, *, titulo: str = "Estructura") -> None:
     handles, etiquetas = ax.get_legend_handles_labels()
     if handles:
         ax.legend(handles, etiquetas, title=titulo, frameon=True)
+
+
+def _dibujar_barras_desviacion(
+    ax: Axes,
+    grupo: pd.DataFrame,
+    color: str,
+) -> None:
+    medias = pd.to_numeric(grupo["Tiempo_Promedio_s"], errors="coerce")
+    desviaciones = pd.to_numeric(grupo["Desviacion_Muestral_s"], errors="coerce")
+    validos = medias.gt(0) & desviaciones.notna() & desviaciones.ge(0)
+    if not validos.any():
+        return
+    errores_inferiores = np.minimum(
+        desviaciones[validos],
+        medias[validos] * (1 - 1e-9),
+    )
+    ax.errorbar(
+        grupo.loc[validos, "N"],
+        medias[validos],
+        yerr=np.vstack((errores_inferiores, desviaciones[validos])),
+        fmt="none",
+        ecolor=color,
+        capsize=3,
+        linewidth=1,
+    )
 
 
 def _etiqueta_serie(estructura: str, modo: str | None = None) -> str:
@@ -246,43 +272,80 @@ def _guardar_semilog_busquedas(datos: pd.DataFrame, carpeta: Path) -> Path:
     seleccion = _preparar_figura(datos, "Busqueda")
     seleccion = seleccion.loc[seleccion["M"].isin((1_000, 10_000))]
     fig, ejes = plt.subplots(
-        1,
         2,
-        figsize=(15, 7),
+        2,
+        figsize=(16, 10),
         sharey=True,
         constrained_layout=True,
     )
     if seleccion.empty:
-        for ax in ejes:
+        for ax in ejes.flat:
             _mensaje_sin_datos(ax, "Sin datos medidos para M = 1000 o M = 10000.")
     else:
-        for ax, modo in zip(ejes, ("IDs Aleatorios", "IDs Ordenados")):
-            subset = seleccion.loc[seleccion["Modo"] == modo]
-            for (estructura, m), grupo in subset.groupby(
-                ["Estructura", "M"],
-                dropna=False,
-                sort=False,
-            ):
-                grupo = (
-                    grupo.groupby("N", as_index=False)["Tiempo_Promedio_s"]
-                    .mean()
-                    .sort_values("N")
+        rangos_n = (
+            ("N ≤ 10.000", seleccion["N"] <= 10_000, "linear"),
+            ("N de 10k a 1M", seleccion["N"] > 10_000, "log"),
+        )
+        modos = ("IDs Aleatorios", "IDs Ordenados")
+        for fila, modo in enumerate(modos):
+            for columna, (titulo_rango, mascara_n, escala_x) in enumerate(rangos_n):
+                ax = ejes[fila, columna]
+                subset = seleccion.loc[
+                    (seleccion["Modo"] == modo) & mascara_n
+                ]
+                for (estructura, m), grupo in subset.groupby(
+                    ["Estructura", "M"],
+                    dropna=False,
+                    sort=False,
+                ):
+                    grupo = (
+                        grupo.groupby("N", as_index=False)["Tiempo_Promedio_s"]
+                        .mean()
+                        .sort_values("N")
+                    )
+                    if grupo.empty:
+                        continue
+                    etiqueta = (
+                        f"{_ETIQUETAS_ESTRUCTURAS.get(str(estructura), estructura)}, "
+                        f"M={int(m):,}"
+                    )
+                    linea = ax.plot(
+                        grupo["N"],
+                        grupo["Tiempo_Promedio_s"],
+                        color=_PALETA_ESTRUCTURAS.get(str(estructura)),
+                        linestyle="-" if int(m) == 1_000 else "--",
+                        marker="o" if int(m) == 1_000 else "s",
+                        linewidth=1.7,
+                        markersize=4,
+                        label=etiqueta,
+                    )[0]
+                    ax.annotate(
+                        etiqueta,
+                        (grupo["N"].iloc[-1], grupo["Tiempo_Promedio_s"].iloc[-1]),
+                        xytext=(5, 0),
+                        textcoords="offset points",
+                        color=linea.get_color(),
+                        fontsize=7,
+                        va="center",
+                        clip_on=False,
+                    )
+                ax.set_title(f"{modo.removeprefix('IDs ')} — {titulo_rango}")
+                ax.set_xscale(escala_x)
+                ax.set_yscale("log")
+                ax.set_xlabel(
+                    "N (registros, escala logarítmica)"
+                    if escala_x == "log"
+                    else "N (registros, escala lineal)"
                 )
-                ax.plot(
-                    grupo["N"],
-                    grupo["Tiempo_Promedio_s"],
-                    color=_PALETA_ESTRUCTURAS.get(str(estructura)),
-                    linestyle="-" if int(m) == 1_000 else "--",
-                    marker="o" if int(m) == 1_000 else "s",
-                    linewidth=1.7,
-                    markersize=4,
-                    label=f"{_ETIQUETAS_ESTRUCTURAS.get(str(estructura), estructura)}, M={int(m):,}",
-                )
-            ax.set_title(modo.removeprefix("IDs "))
-            ax.set_yscale("log")
-            ax.set_xlabel("N (registros, escala lineal)")
-            _configurar_ejes(ax)
-        handles, etiquetas = ejes[0].get_legend_handles_labels()
+                if escala_x == "linear":
+                    ax.set_xlim(left=0)
+                _configurar_ejes(ax)
+        handles_por_etiqueta = {}
+        for ax in ejes.flat:
+            handles, etiquetas_locales = ax.get_legend_handles_labels()
+            handles_por_etiqueta.update(zip(etiquetas_locales, handles))
+        handles = list(handles_por_etiqueta.values())
+        etiquetas = list(handles_por_etiqueta)
         if handles:
             fig.legend(
                 handles,
@@ -291,7 +354,8 @@ def _guardar_semilog_busquedas(datos: pd.DataFrame, carpeta: Path) -> Path:
                 loc="outside lower center",
                 ncol=3,
             )
-    ejes[0].set_ylabel("Tiempo por lote (s, escala logarítmica)")
+    ejes[0, 0].set_ylabel("Tiempo por lote (s, escala logarítmica)")
+    ejes[1, 0].set_ylabel("Tiempo por lote (s, escala logarítmica)")
     fig.suptitle("Búsqueda para M = 1000 y M = 10000")
     ruta = carpeta / "semilog_busquedas.png"
     _guardar(fig, ruta)
@@ -327,10 +391,18 @@ def _guardar_loglog_insercion(datos: pd.DataFrame, carpeta: Path) -> Path:
         _mensaje_sin_datos(ax, "Sin datos medidos para inserción ordenada.")
     else:
         limites_n: list[float] = []
-        for estructura in _ORDEN_ESTRUCTURAS:
+        for indice_estructura, estructura in enumerate(_ORDEN_ESTRUCTURAS):
             grupo = seleccion.loc[seleccion["Estructura"] == estructura].sort_values("N")
             if grupo.empty:
                 continue
+            grupo = (
+                grupo.groupby("N", as_index=False)
+                .agg(
+                    Tiempo_Promedio_s=("Tiempo_Promedio_s", "mean"),
+                    Desviacion_Muestral_s=("Desviacion_Muestral_s", "mean"),
+                )
+                .sort_values("N")
+            )
             ajuste = _ajustar_pendiente(grupo)
             if ajuste is None:
                 continue
@@ -340,13 +412,24 @@ def _guardar_loglog_insercion(datos: pd.DataFrame, carpeta: Path) -> Path:
                 f"(m={pendiente:.3f}, R²={r_cuadrado:.3f})"
             )
             color = _PALETA_ESTRUCTURAS[estructura]
-            ax.loglog(
+            linea = ax.loglog(
                 grupo["N"],
                 grupo["Tiempo_Promedio_s"],
                 marker="o",
                 color=color,
                 linewidth=1.8,
                 label=etiqueta,
+            )[0]
+            _dibujar_barras_desviacion(ax, grupo, color)
+            ax.annotate(
+                _ETIQUETAS_ESTRUCTURAS[estructura],
+                (grupo["N"].iloc[-1], grupo["Tiempo_Promedio_s"].iloc[-1]),
+                xytext=(6, 5 + indice_estructura * 5),
+                textcoords="offset points",
+                color=linea.get_color(),
+                fontsize=8,
+                va="bottom",
+                clip_on=False,
             )
             limites_n.extend(grupo["N"].astype(float).tolist())
 
@@ -358,13 +441,28 @@ def _guardar_loglog_insercion(datos: pd.DataFrame, carpeta: Path) -> Path:
             if referencia.empty:
                 referencia = seleccion.iloc[[len(seleccion) // 2]]
             tiempo_pivote = float(referencia["Tiempo_Promedio_s"].median())
-            for pendiente, nombre in ((1, "Referencia m=1"), (2, "Referencia m=2")):
+            for indice_referencia, (pendiente, nombre) in enumerate(
+                ((1, "Referencia m=1"), (2, "Referencia m=2"))
+            ):
+                referencia_y = (
+                    tiempo_pivote * (n_referencia / n_pivote) ** pendiente
+                )
                 ax.loglog(
                     n_referencia,
-                    tiempo_pivote * (n_referencia / n_pivote) ** pendiente,
+                    referencia_y,
                     linestyle=":",
                     color="gray",
                     label=nombre,
+                )
+                ax.annotate(
+                    nombre,
+                    (n_referencia[-1], referencia_y[-1]),
+                    xytext=(6, 5 + indice_referencia * 5),
+                    textcoords="offset points",
+                    color="gray",
+                    fontsize=8,
+                    va="bottom",
+                    clip_on=False,
                 )
         _leyenda(ax, titulo="Pendiente empírica; R²")
     ax.set_title("Inserción ordenada: pendiente empírica y referencias")
@@ -384,17 +482,37 @@ def _guardar_extrapolacion(datos: pd.DataFrame, carpeta: Path) -> Path:
         _mensaje_sin_datos(ax, "Sin datos medidos para proyectar inserción ordenada.")
     else:
         tamanios_proyeccion = np.asarray((200_000, 500_000, 750_000, 1_000_000))
-        for estructura in _ORDEN_ESTRUCTURAS:
+        for indice_estructura, estructura in enumerate(_ORDEN_ESTRUCTURAS):
             grupo = seleccion.loc[seleccion["Estructura"] == estructura].sort_values("N")
             if grupo.empty:
                 continue
-            ax.loglog(
+            grupo = (
+                grupo.groupby("N", as_index=False)
+                .agg(
+                    Tiempo_Promedio_s=("Tiempo_Promedio_s", "mean"),
+                    Desviacion_Muestral_s=("Desviacion_Muestral_s", "mean"),
+                )
+                .sort_values("N")
+            )
+            color = _PALETA_ESTRUCTURAS[estructura]
+            linea = ax.loglog(
                 grupo["N"],
                 grupo["Tiempo_Promedio_s"],
                 marker="o",
-                color=_PALETA_ESTRUCTURAS[estructura],
+                color=color,
                 linestyle="-",
                 label=f"{_ETIQUETAS_ESTRUCTURAS[estructura]} medido",
+            )[0]
+            _dibujar_barras_desviacion(ax, grupo, color)
+            ax.annotate(
+                f"{_ETIQUETAS_ESTRUCTURAS[estructura]} medido",
+                (grupo["N"].iloc[-1], grupo["Tiempo_Promedio_s"].iloc[-1]),
+                xytext=(6, 5 + indice_estructura * 5),
+                textcoords="offset points",
+                color=linea.get_color(),
+                fontsize=8,
+                va="bottom",
+                clip_on=False,
             )
             ajuste = _ajustar_pendiente(grupo)
             if ajuste is None:
@@ -416,14 +534,24 @@ def _guardar_extrapolacion(datos: pd.DataFrame, carpeta: Path) -> Path:
                     )
                 ),
                 linestyle=":",
-                color=_PALETA_ESTRUCTURAS[estructura],
+                color=color,
                 marker="X",
                 markersize=7,
                 label=f"{_ETIQUETAS_ESTRUCTURAS[estructura]} extrapolado",
             )
+            ax.annotate(
+                f"{_ETIQUETAS_ESTRUCTURAS[estructura]} extrapolado",
+                (proyectados[-1], tiempos_proyectados[-1]),
+                xytext=(6, 5 + indice_estructura * 5),
+                textcoords="offset points",
+                color=color,
+                fontsize=8,
+                va="bottom",
+                clip_on=False,
+            )
             hay_extrapolacion = True
     ax.set_xlim(left=1)
-    ax.set_ylim(bottom=1e-9)
+    ax.set_ylim(bottom=1e-4, top=1e5)
     ax.set_title("Inserción ordenada hasta N = 1.000.000")
     ax.set_xlabel("N (registros, escala logarítmica)")
     ax.set_ylabel("Tiempo (s, escala logarítmica)")

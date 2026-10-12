@@ -1,96 +1,32 @@
-# Guía de Sustentación Técnica — Laboratorio 3: Rendimiento de Estructuras de Datos
+# Material de Apoyo para Sustentación Técnica — Laboratorio 3
 
-## 1. Ficha Técnica de Hardware y Entorno de Pruebas
+## 1. Muestreo Estadístico e Higiene de Medición
 
-- **Procesador (CPU):** [13th Gen Intel(R) Core(TM) i5-13420H (2.10 GHz)/NVIDIA GeForce RTX 3050 6GB Laptop GPU (6 GB)/Intel(R) UHD Graphics (128 MB)]
-- **Memoria RAM:** [ 16 GB DDR4]
-- **Sistema Operativo:** [Windows 11 Pro]  
-- **Entorno de Ejecución:** Python 3.11+
-- **Higiene Estadística:**
-  - Desactivación explícita del Recolector de Basura (`gc.disable()`) durante las mediciones.
-  - Temporizador de alta resolución `time.perf_counter()`.
-  - Repetición de $K = 5$ ejecuciones independientes por prueba, calculando media ($\mu$) y desviación estándar ($\sigma$).
+- **Muestreo:** $K = 10$ repeticiones para $N \le 10.000$; $K = 5$ para las mediciones estándar en $N = 20.000$, $N = 30.000$, $N = 50.000$ y $N = 100.000$; en ABB ordenado se usa $K = 3$ para $N \in \{20.000, 30.000, 50.000, 100.000\}$ y en Lista Enlazada para $N = 100.000$; $K = 3$ para todas las estructuras medidas en $N \in \{500.000, 1.000.000\}$.
+- **Higiene:** Supresión del recolector de basura (`gc.disable()`) durante los bloques de medición, temporizador de alta resolución (`time.perf_counter()`) y ventanas adaptativas de ejecución ($\ge 1,0\text{ s}$).
+- **Tratamiento de Atípicos:** Aplicación del criterio Rango Intercuartílico (IQR) para reportar valores atípicos sin eliminarlos arbitrariamente de los datasets crudos.
+- **Unidades:** Estandarización estricta de todos los tiempos en segundos (s).
 
 ---
 
-## 2. Matriz Comparativa de Complejidades Teóricas vs. Resultados Empíricos
+## 2. Comparativa Empírica Principal ($N = 10.000$)
 
-| Estructura | Inserción Ordenada (Teórica) | Inserción Ordenada (Empírica, N=10,000) | Búsqueda Puntual (Teórica) | Búsqueda M=10,000 (Empírica, N=10,000) |
-| :--- | :---: | :---: | :---: | :---: |
-| **Lista Enlazada** | $O(1)$ | **0.0081 s** | $O(N)$ | **18.4680 s** |
-| **ABB (Desbalanceado)** | $O(N)$ por elem ($O(N^2)$ total) | **2.9058 s** | $O(N)$ (Degenerado) | **3.3310 s** |
-| **Árbol B+ (orden 16)** | $O(\log_{16} N)$ por elem | **0.0225 s** | $O(\log_{16} N)$ | **0.0143 s** |
-
----
-
-## 3. Puntos Clave para Defender en la Sustentación
-
-### A. Degeneración del ABB bajo Datos Ordenados
-
-- **Fenómeno:** Al insertar datos secuenciales ($1, 2, 3 \dots N$), el Árbol Binario de Búsqueda no realiza rotaciones de balanceo. Cada elemento se inserta a la derecha del anterior, formando una línea recta de profundidad $h = N$.
-- **Impacto:** Construir el árbol pasa de requerir $O(N \log N)$ a requerir $O(N^2)$ comparaciones ($\approx 50 \times 10^6$ operaciones para $N=10.000$), tardando **2.9058 s** frente a los **0.0081 s** de la Lista Enlazada.
-
-### B. Escalabilidad en Lotes de Búsqueda ($M$)
-
-- Para la **Lista Enlazada**, incrementar $M$ en un factor de 10 escala el tiempo de manera lineal estricta:
-  - $M=10 \implies 0.0170\text{ s}$
-  - $M=100 \implies 0.1864\text{ s}$
-  - $M=1.000 \implies 1.8598\text{ s}$
-  - $M=10.000 \implies 18.4680\text{ s}$
-- En el **Árbol B+ de orden 16**, la profundidad se mantiene en $h = \lceil \log_{16}(10.000) \rceil = 4$ niveles. Resolver un lote con $M=10.000$ consultas solo requiere **0.0143 s**, siendo más de **1.200 veces más rápido** que la lista enlazada.
-
-### C. Superioridad del Árbol B+ en Búsquedas por Rango
-
-- En un escenario donde se soliciten estudiantes con IDs dentro de un rango $[ID_A, ID_B]$:
-  - La **Lista Enlazada** o el **ABB** requieren un recorrido completo iterativo ($O(N)$).
-  - El **Árbol B+** localiza la hoja inicial en $O(\log_{16} N)$ y navega horizontalmente a través de los punteros `next` entre hojas adyacentes.
-
-### D. Extrapolación Analítica para $N = 100.000$ y $N = 1.000.000$
-
-- Para $N = 100.000$, la construcción del ABB en orden tomaría aproximadamente $300\text{ s}$ (5 minutos por corrida).
-- Para $N = 1.000.000$, requeriría muchas horas de cómputo; por eso el benchmark excluye el ABB ordenado sobre $N=100.000$.
-- *Conclusión:* El Árbol B+ es la única arquitectura verdaderamente escalable para volúmenes de datos masivos.
-
-## Justificación Técnica sobre la Escala de Tiempos y el Umbral de 1s – 300s
-
-En el marco del benchmark ejecutado con $N = 10.000$ registros y $M = 10.000$ consultas, los tiempos de ejecución abarcan desde **$0.00003\text{ s}$ hasta $18.47\text{ s}$**. A continuación se justifica técnicamente por qué las estructuras logarítmicas se mantienen por debajo del umbral de $1\text{ s}$ y por qué no es técnicamente viable forzar a todas las estructuras a operar en el rango de $1\text{ s} - 300\text{ s}$:
+| Estructura | Inserción (s) | Búsqueda $Q=1.000$ (s) | Búsqueda $Q=10.000$ (s) | Memoria (MB) | Altura Promedio |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Lista Enlazada (IDs Aleatorios)** | **0,0065 s** | **1,2508 s** | **12,6555 s** | **0,84 MB** | **1,0** |
+| **ABB (IDs Ordenados)** | **2,8664 s** | **0,2342 s** | **2,3373 s** | **0,99 MB** | **10.000,0** |
+| **ABB (IDs Aleatorios)** | **0,0198 s** | **0,0015 s** | **0,0156 s** | **0,99 MB** | **31,1** |
+| **Árbol B+ ($M=16$, Aleatorio)** | **0,0247 s** | **0,0009 s** | **0,0098 s** | **0,50 MB** | **4,0** |
 
 ---
 
-### 1. Superioridad Algorítmica del Árbol B+ ($< 1\text{ s}$)
+## 3. Puntos Clave de Defensa Técnica
 
-El Árbol B+ con orden $16$ mantiene una profundidad extremadamente reducida:
-$$h = \lceil \log_{16}(10.000) \rceil = 4 \text{ niveles}$$
+1. **Degeneración Cuadrática del ABB Ordenado ($O(N^2)$):**
+   *Al recibir claves secuenciales sin rotaciones de balanceo, la altura crece linealmente ($h = N$). La construcción en $N = 10.000$ toma **2,8664 s**, escala a **71,7215 s** en $N = 50.000$ y alcanza **286,3523 s** (~4,77 minutos) en $N = 100.000$.
 
-- **Búsqueda Puntual:** Responder una consulta requiere como máximo **4 saltos de puntero en memoria RAM**. Resolver $M = 10.000$ búsquedas requiere solo $\approx 40.000$ operaciones, ejecutándose en **$0.0143\text{ s}$ ($14.3\text{ ms}$)**.
-- **Acceso a Memoria:** Al ejecutarse 100% en RAM física, la latencia por acceso a nodo es del orden de nanosegundos ($10 - 100\text{ ns}$), optimizada por la localidad de referencia en las líneas de caché L1/L2/L3 del procesador.
-- **Conclusión:** Para que el Árbol B+ alcance un tiempo de $1\text{ s}$ o $300\text{ s}$, se requeriría elevar $N$ a decenas de millones de registros ($N \ge 10^8$), lo cual excede la capacidad de pruebas locales en memoria RAM.
+2. **Costo de Overhead Constante en Árbol B+ vs. ABB Aleatorio:**
+   *Para $N = 10.000$, la inserción en el Árbol B+ (**0,0247 s**) es ligeramente superior al ABB Aleatorio (**0,0198 s**). Este sobrecosto proviene de la administración interna de arreglos en nodos y divisiones (*splits*). Sin embargo, en $N = 100.000$, el Árbol B+ toma la delantera (**0,2826 s** vs **0,3845 s**) y en $N = 1.000.000$ confirma su superioridad (**5,7007 s** vs **6,5557 s**).
 
----
-
-### 2. Validación del Umbral $> 1\text{ s}$ en Algoritmos Ineficientes
-
-El benchmark demuestra que las estructuras con complejidad lineal $O(N)$ o cuadrática $O(N^2)$ **sí ingresan y superan el rango de $1\text{ s}$** para $N = 10.000$:
-
-1. **Inserción Ordenada en ABB ($2.91\text{ s}$):**
-   Debido a la falta de balanceo, la altura del árbol degenera en $h = N = 10.000$. Construir el árbol requiere $\frac{N(N+1)}{2} \approx 50 \times 10^6$ comparaciones en Python interpretado, alcanzando **$2.9058\text{ s}$** (ingresando al rango de $1\text{ s} - 300\text{ s}$).
-
-2. **Búsqueda Masiva en Lista Enlazada con $M = 10.000$ ($18.47\text{ s}$):**
-   La búsqueda lineal $O(N \cdot M)$ requiere escanear en promedio $\frac{N}{2} = 5.000$ nodos por consulta. Para $M = 10.000$, se ejecutan $50 \times 10^6$ iteraciones secuenciales, tardando **$18.4680\text{ s}$**.
-
----
-
-### 3. Inviabilidad de Forzar $300\text{ s}$ para Todas las Estructuras
-
-Si se incrementara el tamaño del problema (por ejemplo a $N = 100.000$ o $N = 1.000.000$) con el fin de obligar al Árbol B+ a aproximarse a $1\text{ s}$:
-
-- **Colapso del ABB:** Al ser $O(N^2)$, una inserción con $N = 100.000$ puede aproximarse a $\approx 300\text{ s}$ (5 minutos), y con $N = 1.000.000$ tomaría **muchas horas por prueba**. El benchmark limita el ABB ordenado a $N\le100.000$ y registra configuraciones sobre cinco minutos como `no medido`.
-- **Colapso de la Lista Enlazada:** La búsqueda con $M = 10.000$ sobre $N = 1.000.000$ se excluye; para ese tamaño solo se prueban lotes de hasta 1.000 búsquedas.
-
----
-
-### 4. Solución Visual: Escalas Semilogarítmicas y Log-Log
-
-Para representar de forma coherente en un mismo gráfico magnitudes que varían desde $0.00003\text{ s}$ hasta $18.47\text{ s}$ (un rango dinámico de más de 5 órdenes de magnitud), se utilizaron **gráficas en escala semi-logarítmica (`semilog_busquedas.png`) y log-log (`loglog_insercion.png`)**.
-
-Esto evita que las curvas sub-segundo del Árbol B+ queden "aplastadas" visualmente contra el eje $X$ y permite apreciar la pendiente matemática real de cada estructura.
+3. **Eficiencia de Memoria y Localidad de Caché:**
+   *En $N = 1.000.000$, el Árbol B+ ($M=16$) consume únicamente **50,17 MB** frente a los **99,18 MB** del ABB Aleatorio (una reducción del 49,4% en espacio), logrando además resolver $10.000$ consultas en **0,0385 s** frente a **0,0580 s** del ABB.

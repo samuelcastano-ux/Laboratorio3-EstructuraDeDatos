@@ -54,15 +54,18 @@ Datos leídos de [`resultados/ficha.json`](resultados/ficha.json):
 ## Parámetros y límites de viabilidad
 
 El conjunto de tamaños configurado es
-\(N \in \{1.000,\ 2.500,\ 5.000,\ 7.500,\ 10.000,\ 50.000,\ 100.000,\
-500.000,\ 1.000.000\}\). Los lotes de búsqueda son
+\(N \in \{1.000,\ 2.500,\ 5.000,\ 7.500,\ 10.000,\ 20.000,\ 30.000,\ 50.000,\ 100.000,\ 500.000,\ 1.000.000\}\).
+Los lotes de búsqueda son
 \(M \in \{10,\ 100,\ 1.000,\ 10.000\}\). Estos tamaños y lotes aparecen en los
 CSV de resultados.
 
 El CSV registra \(K=10\) hasta \(N=10.000\), \(K=5\) para los tamaños
 intermedios y \(K=3\) para los tamaños mayores. Para el ABB ordenado en el
-límite \(N=100.000\), registra \(K=3\). Se reduce el número de repeticiones en
-las configuraciones costosas para contener el tiempo de ejecución; el ABB
+límite \(N=100.000\) y en los puntos intermedios \(N \in
+\{20.000,\ 30.000,\ 50.000\}\), registra \(K=3\). La lista enlazada para
+\(N \ge 100.000\) usa \(K=3\) y limita las búsquedas existentes a
+\(M \in \{10,\ 100,\ 1.000\}\). Se reduce el número de repeticiones en las
+configuraciones costosas para contener el tiempo de ejecución; el ABB
 ordenado puede requerir \(O(N^2)\) operaciones.
 
 Límites del benchmark:
@@ -70,12 +73,17 @@ Límites del benchmark:
 - ABB con IDs ordenados: viable solo hasta \(N=100.000\). Aun dentro de ese
   límite, una configuración puede superar el timeout y quedar como **no
   medido**, como ocurrió en los resultados de ese tamaño.
-- Lista enlazada con \(N \ge 500.000\): búsquedas existentes limitadas a
-  \(M \le 1.000\). Para los tamaños grandes, las pruebas de memoria se reservan
-  al árbol B+ y al ABB con IDs aleatorios.
-- Una configuración que supera el timeout de 600 segundos se aborta y aparece
-  como **no medido**. Los límites o el timeout no se reemplazan con valores
-  estimados.
+- Lista enlazada con \(N \ge 100.000\): búsquedas existentes limitadas a
+  \(M \in \{10,\ 100,\ 1.000\}\). Para los tamaños grandes, las pruebas de
+  memoria se reservan al árbol B+ y al ABB con IDs aleatorios.
+- Cada operación (acumulada entre sus repeticiones \(K\)) tiene un timeout
+  independiente de 600 segundos. Para el ABB
+  ordenado en los tamaños intermedios \(20.000,\ 30.000,\ 50.000\), el límite
+  es de 1.200 segundos por operación. Si una operación excede su límite, se
+  marca como **no medido** y las demás operaciones continúan.
+- `--reanudar` lee `resultados/resultados_benchmark.csv` y omite las
+  combinaciones que ya estén en estado **medido**, sin omitir los demás
+  experimentos de ese tamaño \(N\).
 
 ## Generación de datos y búsquedas
 
@@ -115,36 +123,36 @@ indica que el CSV no contiene una medición válida.
 
 ### N = 10.000
 
-| Modo | Estructura | K | Inserción (s) | Búsqueda M=1.000 (s) | Búsqueda M=10.000 (s) | Listar (s) | Altura | Memoria (bytes) |
+| Modo | Estructura | K | Inserción (s) | Búsqueda Q=1.000 (s) | Búsqueda Q=10.000 (s) | Listar (s) | Altura | Memoria (bytes) |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| IDs aleatorios | Lista enlazada | 10 | 0.005733 ± 0.000448 | 1.06894 ± 0.063997 | 10.8744 ± 0.261 | 0.004667 ± 0.000261 | 1 | 880,208 |
-| IDs aleatorios | ABB | 10 | 0.02004 ± 0.00155 | 0.001447 ± 0.00011 | 0.01588 ± 0.000994 | 0.002015 ± 0.000143 | 31.1 | 1,040,200 |
-| IDs aleatorios | Árbol B+ | 10 | 0.02693 ± 0.00089 | 0.001005 ± 0.0000662 | 0.01032 ± 0.000786 | 0.0001805 ± 0.0000168 | 4 | 522,992 |
-| IDs ordenados | Lista enlazada | 10 | 0.005925 ± 0.000632 | 1.06717 ± 0.084792 | 10.5394 ± 0.368575 | 0.002407 ± 0.000144 | 1 | 880,208 |
-| IDs ordenados | ABB | 10 | 3.46737 ± 0.174444 | 0.292991 ± 0.036483 | 2.969755 ± 0.204643 | 0.004404 ± 0.000471 | 10.000 | 1,040,416 |
-| IDs ordenados | Árbol B+ | 10 | 0.02304 ± 0.00119 | 0.001089 ± 0.000099 | 0.01184 ± 0.00105 | 0.0001884 ± 0.0000201 | 5 | 637,448 |
+| IDs aleatorios | Lista enlazada | 10 | 0.00647273 ± 0.000152 | 1.2508 ± 0.0487 | 12.6555 ± 0.398 | 0.00375549 ± 9.78e-05 | 1 | 880,208 |
+| IDs aleatorios | ABB | 10 | 0.019769 ± 0.000387 | 0.00148077 ± 4.3e-05 | 0.0155815 ± 0.000442 | 0.00261959 ± 0.000123 | 31.1 | 1,040,200 |
+| IDs aleatorios | Árbol B+ | 10 | 0.0246819 ± 0.00032 | 0.000925313 ± 1.72e-05 | 0.00976259 ± 0.000115 | 0.000142369 ± 5.1e-06 | 4 | 522,928 |
+| IDs ordenados | Lista enlazada | 10 | 0.00634033 ± 0.000251 | 1.17252 ± 0.0671 | 11.7782 ± 0.625 | 0.00239553 ± 0.00013 | 1 | 880,208 |
+| IDs ordenados | ABB | 10 | 2.86638 ± 0.0609 | 0.234224 ± 0.00413 | 2.33729 ± 0.0512 | 0.00360591 ± 0.000137 | 10,000 | 1,040,416 |
+| IDs ordenados | Árbol B+ | 10 | 0.0225913 ± 0.000562 | 0.000998411 ± 2.64e-05 | 0.0104341 ± 0.000196 | 0.000144656 ± 3.97e-06 | 5 | 637,384 |
 
 ### N = 100.000
 
-| Modo | Estructura | K | Inserción (s) | Búsqueda M=1.000 (s) | Búsqueda M=10.000 (s) | Listar (s) | Altura | Memoria (bytes) |
+| Modo | Estructura | K | Inserción (s) | Búsqueda Q=1.000 (s) | Búsqueda Q=10.000 (s) | Listar (s) | Altura | Memoria (bytes) |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| IDs aleatorios | Lista enlazada | 5 | no medido | no medido | no medido | no medido | no medido | no medido |
-| IDs aleatorios | ABB | 5 | 0.379591 ± 0.0147 | 0.00279026 ± 0.000171 | 0.0349771 ± 0.00195 | 0.0509152 ± 0.00268 | 40.6 | 10,400,400 |
-| IDs aleatorios | Árbol B+ | 5 | 0.585853 ± 0.208 | 0.00260478 ± 0.00103 | 0.0299919 ± 0.00922 | 0.00779753 ± 0.00172 | 5 | 5,253,432 |
-| IDs ordenados | Lista enlazada | 5 | no medido | no medido | no medido | no medido | no medido | no medido |
-| IDs ordenados | ABB | 3 | no medido | no medido | no medido | no medido | no medido | no medido |
-| IDs ordenados | Árbol B+ | 5 | 0.275896 ± 0.027 | 0.00172731 ± 0.000241 | 0.0200016 ± 0.00155 | 0.00316382 ± 0.000405 | 6 | 6,412,016 |
+| IDs aleatorios | Lista enlazada | 3 | 0.0712782 ± 0.000901 | 16.3536 ± 0.471 | no medido | 0.0452785 ± 0.000355 | 1 | 8,800,296 |
+| IDs aleatorios | ABB | 5 | 0.384479 ± 0.00343 | 0.00323548 ± 4.75e-05 | 0.0330151 ± 0.000473 | 0.0480404 ± 0.00186 | 40.6 | 10,400,400 |
+| IDs aleatorios | Árbol B+ | 5 | 0.282561 ± 0.102 | 0.00136585 ± 0.000673 | 0.0155792 ± 0.00627 | 0.0055668 ± 0.00205 | 5 | 5,253,368 |
+| IDs ordenados | Lista enlazada | 3 | 0.0616533 ± 0.000959 | 10.703 ± 0.22 | no medido | 0.0226536 ± 0.0001 | 1 | 8,800,280 |
+| IDs ordenados | ABB | 3 | 286.352 ± 0.542 | 2.33367 ± 0.0113 | 23.6604 ± 0.229 | 0.0386528 ± 0.00358 | 100,000 | 10,400,416 |
+| IDs ordenados | Árbol B+ | 5 | 0.191815 ± 0.0708 | 0.00127231 ± 0.000576 | 0.0143083 ± 0.00506 | 0.00278327 ± 0.000793 | 6 | 6,411,952 |
 
 ### N = 1.000.000
 
-| Modo | Estructura | K | Inserción (s) | Búsqueda M=1.000 (s) | Búsqueda M=10.000 (s) | Listar (s) | Altura | Memoria (bytes) |
+| Modo | Estructura | K | Inserción (s) | Búsqueda Q=1.000 (s) | Búsqueda Q=10.000 (s) | Listar (s) | Altura | Memoria (bytes) |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| IDs aleatorios | Lista enlazada | 3 | no medido | no medido | no medido | no medido | no medido | no medido |
-| IDs aleatorios | ABB | 3 | 9.37374 ± 0.106 | 0.00861353 ± 0.000311 | 0.0840923 ± 0.00291 | 1.03436 ± 0.183 | 49.333 | 104,000,416 |
-| IDs aleatorios | Árbol B+ | 3 | 8.70833 ± 0.128 | 0.00545478 ± 0.000162 | 0.0540715 ± 0.00118 | 0.130942 ± 0.0135 | 6 | 52,605,656 |
-| IDs ordenados | Lista enlazada | 3 | no medido | no medido | no medido | no medido | no medido | no medido |
+| IDs aleatorios | Lista enlazada | 3 | 0.742227 ± 0.0135 | 174.393 ± 3.66 | no medido | 0.668503 ± 0.0189 | 1 | no medido |
+| IDs aleatorios | ABB | 3 | 6.5557 ± 0.255 | 0.00591868 ± 0.000396 | 0.0580102 ± 0.00323 | 0.671762 ± 0.15 | 49.333 | 104,000,416 |
+| IDs aleatorios | Árbol B+ | 3 | 5.70071 ± 0.0167 | 0.0038474 ± 0.000105 | 0.0384868 ± 0.00149 | 0.101907 ± 0.00574 | 6 | 52,605,656 |
+| IDs ordenados | Lista enlazada | 3 | 0.630137 ± 0.0108 | 108.993 ± 0.547 | no medido | 0.237181 ± 0.00227 | 1 | no medido |
 | IDs ordenados | ABB | 3 | no medido | no medido | no medido | no medido | no medido | no medido |
-| IDs ordenados | Árbol B+ | 3 | 8.75048 ± 0.0416 | 0.00679678 ± 0.0000238 | 0.0686844 ± 0.00145 | 0.0707955 ± 0.00325 | 7 | 64,159,184 |
+| IDs ordenados | Árbol B+ | 3 | 2.94219 ± 0.0385 | 0.00297675 ± 2.5e-05 | 0.0299357 ± 0.000221 | 0.0391671 ± 0.00267 | 7 | 64,159,184 |
 
 Los registros de orden B+ distintos al orden 16 pertenecen al barrido
 adicional. Los resultados adicionales, incluidos búsquedas inexistentes,
@@ -178,7 +186,7 @@ configuraciones que sí están registradas como medidas.
 
 ### Altura, listado, memoria y orden B+
 
-![Altura y relación con búsqueda](graficas/altura.png)
+![Altura y relación con búsqueda](graficas/altura_y_busqueda.png)
 
 ![Tiempo de listar](graficas/listar_vs_n.png)
 
@@ -186,59 +194,103 @@ configuraciones que sí están registradas como medidas.
 
 ![Comparación de órdenes del árbol B+](graficas/orden_bplus.png)
 
-## Respuestas a siete preguntas de análisis
+## Preguntas de Evaluación y Sustentación (Respuestas Empíricas)
 
-### ¿Cómo afecta el orden de inserción al ABB?
+Las cifras siguientes provienen de filas con estado `medido` en
+[`resultados/resultados_benchmark.csv`](resultados/resultados_benchmark.csv).
+Los tiempos se expresan en segundos. La memoria en MiB se calcula como bytes
+divididos por 1.048.576. Se reportan promedios; una tendencia observada es
+evidencia experimental, no una demostración de complejidad teórica.
 
-En el resultado de tamaño 10.000, la altura promedio del ABB pasa de 31.1 con
-IDs aleatorios a 10.000 con IDs ordenados. Su tiempo de inserción registrado
-pasa de 0.02004 s a 3.46737 s. Los datos muestran la degeneración de este ABB
-sin balanceo.
+### 1. ¿El comportamiento observado concuerda con las complejidades teóricas esperadas?
 
-### ¿Cuándo deja el ABB de comportarse como \(O(\log N)\)?
+**En general, las tendencias medidas son compatibles con las esperadas, aunque los datos por sí solos no prueban una complejidad asintótica.**
+***Lista enlazada:** La inserción registrada pasa de **0,0065 s** en
+  $N=10.000$ a **0,7422 s** en $N=1.000.000$. Para $N=10.000$, los tiempos de
+  búsqueda al variar el lote $Q$ de 10, 100, 1.000 y 10.000 son **0,0130**,
+  **0,1277**, **1,2508** y **12,6555 s**. El ajuste lineal del tiempo frente a
+  $Q$ para esos cuatro puntos tiene $R^2 = 0,9999985$.
+***ABB con IDs ordenados:** La inserción toma **2,8664 s** en $N=10.000$,
+  **71,7215 s** en $N=50.000$ y **286,3523 s** en $N=100.000$, patrón
+  compatible con la degradación cuadrática de un ABB no balanceado. El CSV
+  también contiene una ejecución separada no medida por timeout en $N=100.000$;
+  no se usa como tiempo ni se confunde con el registro medido.
+***Árbol B+ de orden 16:** Para $Q=10.000$, las búsquedas toman **0,0098 s**
+  en $N=10.000$, **0,0156 s** en $N=100.000$ y **0,0385 s** en $N=1.000.000$,
+  una tendencia compatible con el crecimiento logarítmico esperado.
 
-La búsqueda deja de tener altura logarítmica cuando el árbol se degenera y
-requiere recorrer un camino proporcional a N. En el resultado de tamaño 10.000,
-la búsqueda del ABB ordenado tiene altura 10.000; el de IDs aleatorios tiene
-altura 31.1. Para el ABB ordenado de tamaño 100.000, los tiempos son **no
-medido**.
+### 2. ¿A partir de qué tamaño de entrada ($N$) se vuelven críticas las diferencias de rendimiento?
 
-### ¿Qué relación hay entre altura y tiempo de búsqueda?
+No hay un umbral único aplicable a todas las operaciones. En la inserción del
+ABB con IDs ordenados, el tiempo medido crece desde **0,0916 s** en $N=2.500$
+a **0,3626 s** en $N=5.000$ y **2,8664 s** en $N=10.000$. En este último
+tamaño, buscar $Q=10.000$ IDs tarda **12,6555 s** en la lista enlazada y
+**0,0098 s** en el B+ de orden 16. Así, las diferencias ya son visibles en
+$N=5.000$ para inserción del ABB ordenado y resultan marcadas a $N=10.000$ en
+las operaciones citadas.
 
-El costo de una búsqueda en el ABB depende de los nodos del camino y, por ello,
-de su altura. En el resultado de tamaño 10.000, para lotes de 1.000 búsquedas,
-el ABB aleatorio registra 0.001447 s y el ABB ordenado 0.292991 s, junto con
-alturas de 31.1 y 10.000, respectivamente. Son medidas de esas configuraciones,
-no una relación causal aislada de otros factores.
+### 3. ¿Existen costos constantes (*overhead*) que hagan que una estructura teóricamente más lenta supere a una más rápida en $N$ pequeño?
 
-### ¿Cómo cambia el tiempo al aumentar M?
+**Sí, las mediciones muestran una ventaja del ABB aleatorio en la inserción de $N=10.000$.**
+*En $N=10.000$: ABB aleatorio **0,0198 s** frente a B+ de orden 16
+  **0,0247 s**.
+*En $N=100.000$: ABB aleatorio **0,3845 s** frente a B+ de orden 16
+  **0,2826 s**.
 
-Para la lista enlazada con IDs aleatorios y tamaño 10.000, el lote M=1.000 tarda
-1.06894 s y el lote M=10.000 tarda 10.8744 s. Para el árbol B+ bajo el mismo
-tamaño y modo, esos lotes tardan 0.001005 s y 0.01032 s. Los CSV permiten
-contrastar el costo de ampliar el lote entre estructuras.
+La comparación documenta el cambio en esos tamaños; los tiempos del CSV no
+aislan ni identifican por sí mismos la causa interna de la diferencia.
 
-### ¿Qué estructura registra menor tiempo para búsquedas por lote?
+### 4. ¿Cómo impacta el orden de llegada de los datos (ordenados vs. aleatorios) a cada estructura?
 
-En las configuraciones medidas de tamaño 1.000.000 y con IDs aleatorios, el
-árbol B+ registra 0.005455 s para M=1.000 y 0.0540715 s para M=10.000; el ABB
-registra 0.008614 s y 0.0840923 s, respectivamente. Para la lista enlazada
-estos casos son **no medido**.
+***Lista enlazada:** Para inserción en $N=10.000$, se midieron **0,0065 s**
+  con IDs aleatorios y **0,0063 s** con IDs ordenados.
+***ABB:** Es muy sensible al orden. En $N=10.000$, el tiempo de inserción
+  aumenta de **0,0198 s** con IDs aleatorios a **2,8664 s** con IDs ordenados.
+  En $N=100.000$, los registros medidos son **0,3845 s** con IDs aleatorios y
+  **286,3523 s** con IDs ordenados.
+***Árbol B+ de orden 16:** En $N=100.000$, la inserción medida tarda
+  **0,2826 s** con IDs aleatorios y **0,1918 s** con IDs ordenados. En esta
+  configuración, la entrada ordenada fue más rápida; es una observación de
+  estos datos, no una garantía para cualquier entrada.
 
-### ¿Qué se observa al listar y consultar rangos?
+### 5. ¿Qué estructura ofrece la mejor relación entre consumo de memoria y tiempo de respuesta en volúmenes masivos ($N = 1.000.000$)?
 
-En tamaño 1.000.000 con IDs aleatorios, `listar()` registra 0.130942 s para el
-árbol B+ y 1.03436 s para el ABB. La consulta por rango registra 0.125 s y
-1.284 s, respectivamente. En esas mismas configuraciones, la lista enlazada
-es **no medido**.
+Entre las estructuras con resultados medidos en $N=1.000.000$ e IDs aleatorios,
+el **Árbol B+ de orden 16** registra menor memoria y menor tiempo de búsqueda
+que el ABB:
+***Búsqueda de $Q=10.000$:** B+ **0,0385 s**; ABB **0,0580 s**.
+***Memoria promedio:** B+ **50,17 MiB** (**52.605.656 bytes**); ABB
+  **99,18 MiB** (**104.000.416 bytes**). El B+ usa aproximadamente **49,4 %**
+  menos memoria según estos registros.
 
-### ¿Qué resultados de memoria y escalabilidad están disponibles?
+La memoria de la lista enlazada y su búsqueda con $Q=10.000$ en ese tamaño
+figuran como **no medido**, por lo que no se incluyen en esta comparación.
 
-En tamaño 1.000.000 con IDs aleatorios, el CSV registra 52,605,700 bytes para
-el árbol B+ y 104,000,000 bytes para el ABB. La lista enlazada no se midió en
-ese tamaño. El ABB con IDs ordenados tampoco se midió: el CSV lo limita por
-viabilidad en ese tamaño. Los valores no medidos no se extrapolan ni se
-presentan como mediciones.
+### 6. ¿Cómo escala el costo de consultas masivas al variar el tamaño del lote ($Q$)?
+
+Con $N=10.000$ e IDs aleatorios, al aumentar $Q$ de 1.000 a 10.000:
+***Lista enlazada:** el tiempo pasa de **1,2508 s** a **12,6555 s**
+  (aproximadamente **10,12 veces**).
+***Árbol B+ de orden 16:** pasa de **0,0009 s** a **0,0098 s**
+  (aproximadamente **10,55 veces**).
+
+En ambos casos, el tiempo medido crece aproximadamente en proporción al lote
+en este rango. Para el B+ con $Q=10.000$, al variar $N$ de 10.000 a 100.000 y
+1.000.000, los tiempos registrados son **0,0098**, **0,0156** y **0,0385 s**.
+
+### 7. ¿Cuál es el impacto del grado o capacidad del nodo ($M$) en la estructura del Árbol B+?
+
+Para $N=100.000$ e IDs aleatorios, los promedios medidos según el orden del
+nodo B+ son:
+
+| Orden del nodo | Altura promedio | Inserción (s) | Memoria promedio (bytes) | Memoria (MiB) |
+| :---: | :---: | :---: | :---: | :---: |
+| 4 | 13,8 | 0,4915 | 29.306.016 | 27,95 |
+| 16 | 5,0 | 0,2826 | 5.253.368 | 5,01 |
+| 64 | 3,2 | 0,1344 | 2.491.296 | 2,38 |
+
+En estas mediciones, al aumentar el orden de 4 a 64 disminuyen la altura
+promedio, el tiempo de inserción y la memoria registrada.
 
 ## Limitaciones
 

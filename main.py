@@ -161,7 +161,10 @@ def main() -> None:
     parser.add_argument(
         "--reanudar",
         action="store_true",
-        help="Reanuda el benchmark omitiendo los N guardados en el CSV crudo.",
+        help=(
+            "Reanuda desde resultados/resultados_benchmark.csv y omite las "
+            "combinaciones que ya estén medidas."
+        ),
     )
     argumentos = parser.parse_args()
 
