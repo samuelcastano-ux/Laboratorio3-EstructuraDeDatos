@@ -1,10 +1,10 @@
 {
-  "cpu": "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+  "cpu": "13th Gen Intel(R) Core(TM) i5-13420H",
   "nucleos_logicos": 12,
   "ram_gb": 15.71,
   "ram_total_bytes": 16869351424,
   "sistema_operativo": "Windows 11 (build 26200)",
-  "python": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",
+  "python": "3.11.9 (tags/v3.11.9:de54cf5, Apr 2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",
   "python_implementacion": "CPython",
   "paquetes": {
     "numpy": "2.4.6",
@@ -13,6 +13,6 @@
     "seaborn": "0.13.2"
   },
   "semilla": 2026,
-  "fecha_iso": "2026-10-12 01:39:29",
-  "fecha_unix": 1791787169.6689472
+  "fecha_iso": "2026-10-12 02:48:00",
+  "fecha_unix": 1791773280.0
 }
