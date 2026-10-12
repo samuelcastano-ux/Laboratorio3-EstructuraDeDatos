@@ -38,18 +38,18 @@ enlaza sus hojas para recorrerlas en orden.
 
 Datos leídos de [`resultados/ficha.json`](resultados/ficha.json):
 
-| Propiedad | Valor registrado |
-| --- | --- |
-| CPU | Intel64 Family 6 Model 186 Stepping 2, GenuineIntel |
-| Núcleos lógicos | 12 |
-| Memoria física | 16,869,351,424 bytes |
-| Sistema operativo | Windows-10-10.0.26200-SP0 |
-| Python | CPython 3.11.9, 64-bit |
-| NumPy | 2.4.6 |
-| pandas | 3.0.6 |
-| Matplotlib | 3.11.2 |
-| Seaborn | 0.13.2 |
-| Semilla | 2026 |
+### Ficha Técnica del Entorno de Experimentación
+
+| Propiedad | Valor Registrado |
+| :--- | :--- |
+| **Procesador (CPU)** | 13th Gen Intel(R) Core(TM) i5-13420H |
+| **Núcleos Lógicos** | 12 |
+| **Memoria RAM** | 15.71 GB (16,869,351,424 bytes) |
+| **Sistema Operativo** | Windows 11 (build 26200) |
+| **Entorno Python** | CPython 3.11.9 (64-bit) |
+| **Librerías Clave** | NumPy 2.4.6 \| pandas 3.0.6 \| Matplotlib 3.11.2 \| Seaborn 0.13.2 |
+| **Semilla Aleatoria** | 2026 |
+| **Fecha de Registro** | 2026-10-12 02:48:00 |
 
 ## Parámetros y límites de viabilidad
 
