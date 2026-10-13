@@ -121,7 +121,7 @@ indica que el CSV no contiene una medición válida.
 
 ### N = 10.000
 
-| Modo | Estructura | K | Inserción (s) | Búsqueda Q=1.000 (s) | Búsqueda Q=10.000 (s) | Listar (s) | Altura | Memoria (bytes) |
+| Modo | Estructura | K | Inserción (s) | Búsqueda M=1.000 (s) | Búsqueda M=10.000 (s) | Listar (s) | Altura | Memoria (bytes) |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | IDs aleatorios | Lista enlazada | 10 | 0.00647273 ± 0.000152 | 1.2508 ± 0.0487 | 12.6555 ± 0.398 | 0.00375549 ± 9.78e-05 | 1 | 880,208 |
 | IDs aleatorios | ABB | 10 | 0.019769 ± 0.000387 | 0.00148077 ± 4.3e-05 | 0.0155815 ± 0.000442 | 0.00261959 ± 0.000123 | 31.1 | 1,040,200 |
@@ -132,7 +132,7 @@ indica que el CSV no contiene una medición válida.
 
 ### N = 100.000
 
-| Modo | Estructura | K | Inserción (s) | Búsqueda Q=1.000 (s) | Búsqueda Q=10.000 (s) | Listar (s) | Altura | Memoria (bytes) |
+| Modo | Estructura | K | Inserción (s) | Búsqueda M=1.000 (s) | Búsqueda M=10.000 (s) | Listar (s) | Altura | Memoria (bytes) |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | IDs aleatorios | Lista enlazada | 3 | 0.0712782 ± 0.000901 | 16.3536 ± 0.471 | no medido | 0.0452785 ± 0.000355 | 1 | 8,800,296 |
 | IDs aleatorios | ABB | 5 | 0.384479 ± 0.00343 | 0.00323548 ± 4.75e-05 | 0.0330151 ± 0.000473 | 0.0480404 ± 0.00186 | 40.6 | 10,400,400 |
@@ -143,7 +143,7 @@ indica que el CSV no contiene una medición válida.
 
 ### N = 1.000.000
 
-| Modo | Estructura | K | Inserción (s) | Búsqueda Q=1.000 (s) | Búsqueda Q=10.000 (s) | Listar (s) | Altura | Memoria (bytes) |
+| Modo | Estructura | K | Inserción (s) | Búsqueda M=1.000 (s) | Búsqueda M=10.000 (s) | Listar (s) | Altura | Memoria (bytes) |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | IDs aleatorios | Lista enlazada | 3 | 0.742227 ± 0.0135 | 174.393 ± 3.66 | no medido | 0.668503 ± 0.0189 | 1 | no medido |
 | IDs aleatorios | ABB | 3 | 6.5557 ± 0.255 | 0.00591868 ± 0.000396 | 0.0580102 ± 0.00323 | 0.671762 ± 0.15 | 49.333 | 104,000,416 |
