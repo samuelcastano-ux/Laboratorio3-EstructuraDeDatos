@@ -81,9 +81,7 @@ Límites del benchmark:
   ordenado en los tamaños intermedios \(20.000,\ 30.000,\ 50.000\), el límite
   es de 1.200 segundos por operación. Si una operación excede su límite, se
   marca como **no medido** y las demás operaciones continúan.
-- `--reanudar` lee `resultados/resultados_benchmark.csv` y omite las
-  combinaciones que ya estén en estado **medido**, sin omitir los demás
-  experimentos de ese tamaño \(N\).
+- `--reanudar` lee `resultados/resultados_benchmark.csv` y omite las combinaciones que ya estén en estado **medido**.
 
 ## Generación de datos y búsquedas
 
@@ -194,7 +192,7 @@ configuraciones que sí están registradas como medidas.
 
 ![Comparación de órdenes del árbol B+](graficas/orden_bplus.png)
 
-## Preguntas de Evaluación y Sustentación (Respuestas Empíricas)
+## Preguntas de Evaluación
 
 Las cifras siguientes provienen de filas con estado `medido` en
 [`resultados/resultados_benchmark.csv`](resultados/resultados_benchmark.csv).
@@ -205,26 +203,16 @@ evidencia experimental, no una demostración de complejidad teórica.
 ### 1. ¿El comportamiento observado concuerda con las complejidades teóricas esperadas?
 
 **En general, las tendencias medidas son compatibles con las esperadas, aunque los datos por sí solos no prueban una complejidad asintótica.**
-***Lista enlazada:** La inserción registrada pasa de **0,0065 s** en
-  $N=10.000$ a **0,7422 s** en $N=1.000.000$. Para $N=10.000$, los tiempos de
-  búsqueda al variar el lote $Q$ de 10, 100, 1.000 y 10.000 son **0,0130**,
-  **0,1277**, **1,2508** y **12,6555 s**. El ajuste lineal del tiempo frente a
-  $Q$ para esos cuatro puntos tiene $R^2 = 0,9999985$.
-***ABB con IDs ordenados:** La inserción toma **2,8664 s** en $N=10.000$,
-  **71,7215 s** en $N=50.000$ y **286,3523 s** en $N=100.000$, patrón
-  compatible con la degradación cuadrática de un ABB no balanceado. El CSV
-  también contiene una ejecución separada no medida por timeout en $N=100.000$;
-  no se usa como tiempo ni se confunde con el registro medido.
-***Árbol B+ de orden 16:** Para $Q=10.000$, las búsquedas toman **0,0098 s**
-  en $N=10.000$, **0,0156 s** en $N=100.000$ y **0,0385 s** en $N=1.000.000$,
-  una tendencia compatible con el crecimiento logarítmico esperado.
+- **Lista enlazada:** La inserción registrada pasa de **0,0065 s** en $N=10.000$ a **0,7422 s** en $N=1.000.000$. Para $N=10.000$, los tiempos de búsqueda al variar el lote $M$ de 10, 100, 1.000 y 10.000 son **0,0130**, **0,1277**, **1,2508** y **12,6555 s**. El ajuste lineal del tiempo frente a $M$ para esos cuatro puntos tiene $R^2 = 0,9999985$.
+- **ABB con IDs ordenados:** La inserción toma **2,8664 s** en $N=10.000$, **71,7215 s** en $N=50.000$ y **286,3523 s** en $N=100.000$, patrón compatible con la degradación cuadrática de un ABB no balanceado.
+- **Árbol B+ de orden 16:** Para $M=10.000$, las búsquedas toman **0,0098 s** en $N=10.000$, **0,0156 s** en $N=100.000$ y **0,0385 s** en $N=1.000.000$, una tendencia compatible con el crecimiento logarítmico esperado.
 
 ### 2. ¿A partir de qué tamaño de entrada ($N$) se vuelven críticas las diferencias de rendimiento?
 
 No hay un umbral único aplicable a todas las operaciones. En la inserción del
 ABB con IDs ordenados, el tiempo medido crece desde **0,0916 s** en $N=2.500$
 a **0,3626 s** en $N=5.000$ y **2,8664 s** en $N=10.000$. En este último
-tamaño, buscar $Q=10.000$ IDs tarda **12,6555 s** en la lista enlazada y
+tamaño, buscar $M=10.000$ IDs tarda **12,6555 s** en la lista enlazada y
 **0,0098 s** en el B+ de orden 16. Así, las diferencias ya son visibles en
 $N=5.000$ para inserción del ABB ordenado y resultan marcadas a $N=10.000$ en
 las operaciones citadas.
@@ -242,13 +230,13 @@ aislan ni identifican por sí mismos la causa interna de la diferencia.
 
 ### 4. ¿Cómo impacta el orden de llegada de los datos (ordenados vs. aleatorios) a cada estructura?
 
-***Lista enlazada:** Para inserción en $N=10.000$, se midieron **0,0065 s**
+**Lista enlazada:** Para inserción en $N=10.000$, se midieron **0,0065 s**
   con IDs aleatorios y **0,0063 s** con IDs ordenados.
-***ABB:** Es muy sensible al orden. En $N=10.000$, el tiempo de inserción
+**ABB:** Es muy sensible al orden. En $N=10.000$, el tiempo de inserción
   aumenta de **0,0198 s** con IDs aleatorios a **2,8664 s** con IDs ordenados.
   En $N=100.000$, los registros medidos son **0,3845 s** con IDs aleatorios y
   **286,3523 s** con IDs ordenados.
-***Árbol B+ de orden 16:** En $N=100.000$, la inserción medida tarda
+**Árbol B+ de orden 16:** En $N=100.000$, la inserción medida tarda
   **0,2826 s** con IDs aleatorios y **0,1918 s** con IDs ordenados. En esta
   configuración, la entrada ordenada fue más rápida; es una observación de
   estos datos, no una garantía para cualquier entrada.
@@ -258,27 +246,27 @@ aislan ni identifican por sí mismos la causa interna de la diferencia.
 Entre las estructuras con resultados medidos en $N=1.000.000$ e IDs aleatorios,
 el **Árbol B+ de orden 16** registra menor memoria y menor tiempo de búsqueda
 que el ABB:
-***Búsqueda de $Q=10.000$:** B+ **0,0385 s**; ABB **0,0580 s**.
-***Memoria promedio:** B+ **50,17 MiB** (**52.605.656 bytes**); ABB
+**Búsqueda de $M=10.000$:** B+ **0,0385 s**; ABB **0,0580 s**.
+**Memoria promedio:** B+ **50,17 MiB** (**52.605.656 bytes**); ABB
   **99,18 MiB** (**104.000.416 bytes**). El B+ usa aproximadamente **49,4 %**
   menos memoria según estos registros.
 
 La memoria de la lista enlazada y su búsqueda con $Q=10.000$ en ese tamaño
 figuran como **no medido**, por lo que no se incluyen en esta comparación.
 
-### 6. ¿Cómo escala el costo de consultas masivas al variar el tamaño del lote ($Q$)?
+### 6. ¿Cómo escala el costo de consultas masivas al variar el tamaño del lote ($M$)?
 
-Con $N=10.000$ e IDs aleatorios, al aumentar $Q$ de 1.000 a 10.000:
+Con $N=10.000$ e IDs aleatorios, al aumentar $M$ de 1.000 a 10.000:
 ***Lista enlazada:** el tiempo pasa de **1,2508 s** a **12,6555 s**
   (aproximadamente **10,12 veces**).
 ***Árbol B+ de orden 16:** pasa de **0,0009 s** a **0,0098 s**
   (aproximadamente **10,55 veces**).
 
 En ambos casos, el tiempo medido crece aproximadamente en proporción al lote
-en este rango. Para el B+ con $Q=10.000$, al variar $N$ de 10.000 a 100.000 y
+en este rango. Para el B+ con $M=10.000$, al variar $N$ de 10.000 a 100.000 y
 1.000.000, los tiempos registrados son **0,0098**, **0,0156** y **0,0385 s**.
 
-### 7. ¿Cuál es el impacto del grado o capacidad del nodo ($M$) en la estructura del Árbol B+?
+### 7. ¿Cuál es el impacto del orden o capacidad del nodo en la estructura del Árbol B+?
 
 Para $N=100.000$ e IDs aleatorios, los promedios medidos según el orden del
 nodo B+ son:
@@ -303,9 +291,6 @@ promedio, el tiempo de inserción y la memoria registrada.
   no a toda la memoria residente del proceso.
 - Las proyecciones de la figura de extrapolación son estimaciones gráficas y no
   forman parte de los valores medidos de los CSV.
-- El enunciado original con las siete preguntas no está guardado en los
-  archivos de resultados; las respuestas de esta sección se limitan a
-  conclusiones respaldadas por el CSV.
 
 ## Cómo reproducir
 
